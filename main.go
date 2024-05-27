@@ -118,6 +118,7 @@ func (g *Game) Update() error {
 	x, y := ebiten.CursorPosition()
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 		log.Printf("Mouse position: %d, %d", x, y)
+		log.Printf("array: %v", g.visages)
 
 		if !g.dragging && !g.resizing {
 			if g.selected { // Check for resize and button clicks on selected visage
@@ -273,6 +274,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	deleteIcon, _, err := ebitenutil.NewImageFromFile("assets/delete.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	g.buttons = []Button{
 		{
 			w:       26,
@@ -331,6 +337,18 @@ func main() {
 				visage.w = rotatedImage.Bounds().Dx()
 				visage.h = rotatedImage.Bounds().Dy()
 				g.visages[selectedIndex] = visage
+			},
+		},
+		{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			yOffset: 118,
+			image:   deleteIcon,
+			action: func(selectedIndex int) {
+				g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
+				g.selected = false
+				g.selectedIndex = 0
 			},
 		},
 	}
