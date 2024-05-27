@@ -22,6 +22,7 @@ type Visage struct {
 
 type Game struct {
 	visages       []Visage
+	buttons       []Button
 	err           error
 	m             sync.Mutex
 	selected      bool
@@ -31,15 +32,25 @@ type Game struct {
 	dragOffsetY   int
 	resizing      bool
 	resizeHandle  int
+	clicking      bool
+}
+
+type Button struct {
+	w, h    int
+	xOffset int
+	yOffset int
+	image   *ebiten.Image
+	action  func(selectedIndex int)
 }
 
 const (
-	handleSize        = 8
+	handleSize        = 6
 	handleNone        = 0
 	handleTopLeft     = 1
 	handleTopRight    = 2
 	handleBottomLeft  = 3
 	handleBottomRight = 4
+	buttonSize        = 30
 )
 
 func (g *Game) Update() error {
@@ -108,7 +119,7 @@ func (g *Game) Update() error {
 		log.Printf("Mouse position: %d, %d", x, y)
 
 		if !g.dragging && !g.resizing {
-			if g.selected { // Check for resize on selected visage
+			if g.selected { // Check for resize and button clicks on selected visage
 				v := g.visages[g.selectedIndex]
 				imgX := v.x
 				imgY := v.y
@@ -128,9 +139,18 @@ func (g *Game) Update() error {
 					g.resizing = true
 					g.resizeHandle = handleBottomRight
 				}
+
+				if !g.clicking {
+					for _, button := range g.buttons {
+						if x >= imgX+button.xOffset && x <= imgX+button.xOffset+buttonSize && y >= imgY+button.yOffset && y <= imgY+button.yOffset+buttonSize {
+							button.action(g.selectedIndex)
+							g.clicking = true
+						}
+					}
+				}
 			}
 
-			if !g.resizing { // Check for drag after resize to prevent overlap reselection
+			if !g.resizing && !g.clicking { // Check for drag after resize or click to prevent overlap reselection
 				for i := len(g.visages) - 1; i >= 0; i-- {
 					v := g.visages[i]
 					imgX := v.x
@@ -176,6 +196,7 @@ func (g *Game) Update() error {
 	} else {
 		g.dragging = false
 		g.resizing = false
+		g.clicking = false
 		g.resizeHandle = handleNone
 	}
 
@@ -189,7 +210,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	defer g.m.Unlock()
 
 	if len(g.visages) == 0 {
-		ebitenutil.DebugPrint(screen, "Drop PNG files onto this window!")
 		return
 	}
 
@@ -203,18 +223,29 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	if g.selected {
 		v := g.visages[g.selectedIndex]
-		borderColor := color.RGBA{52, 13, 79, 240}
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), 4, borderColor, false)
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w), 4, borderColor, false)
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), 4, float32(v.h), borderColor, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), 4, float32(v.h), borderColor, false)
+		uiColor := color.RGBA{52, 13, 79, 240}
+
+		// Draw border
+		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), 1, uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w), 1, uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), 1, float32(v.h), uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), 1, float32(v.h), uiColor, false)
 
 		// Draw resize handles
-		handleColor := color.RGBA{52, 13, 79, 240}
-		vector.DrawFilledRect(screen, float32(v.x-handleSize), float32(v.y-handleSize), float32(handleSize*2), float32(handleSize*2), handleColor, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w-handleSize), float32(v.y-handleSize), float32(handleSize*2), float32(handleSize*2), handleColor, false)
-		vector.DrawFilledRect(screen, float32(v.x-handleSize), float32(v.y+v.h-handleSize), float32(handleSize*2), float32(handleSize*2), handleColor, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w-handleSize), float32(v.y+v.h-handleSize), float32(handleSize*2), float32(handleSize*2), handleColor, false)
+		vector.DrawFilledRect(screen, float32(v.x-handleSize), float32(v.y-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x+v.w-handleSize), float32(v.y-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x-handleSize), float32(v.y+v.h-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x+v.w-handleSize), float32(v.y+v.h-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
+
+		// Draw buttons
+		for _, button := range g.buttons {
+			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), color.RGBA{240, 235, 243, 240}, false)
+
+			op := &ebiten.DrawImageOptions{}
+			op.GeoM.Scale(float64(button.w)/float64(button.image.Bounds().Dx()), float64(button.h)/float64(button.image.Bounds().Dy()))
+			op.GeoM.Translate(float64(v.x+button.xOffset), float64(v.y+button.yOffset))
+			screen.DrawImage(button.image, op)
+		}
 	}
 }
 
@@ -223,8 +254,38 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-
 	g := &Game{}
+
+	moveIcon, _, err := ebitenutil.NewImageFromFile("assets/move.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	g.buttons = []Button{
+		{
+			w:       30,
+			h:       30,
+			xOffset: -36,
+			yOffset: 10,
+			image:   moveIcon,
+			action: func(selectedIndex int) {
+				log.Println("Button clicked!")
+				log.Printf("Selected index: %d", selectedIndex)
+				visage := g.visages[selectedIndex]
+
+				if g.selectedIndex == len(g.visages)-1 {
+					// Move to back if already at the top
+					g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
+					g.selectedIndex = 0
+				} else {
+					// Move to top
+					g.visages = append(g.visages[:g.selectedIndex], g.visages[g.selectedIndex+1:]...)
+					g.visages = append(g.visages, visage)
+					g.selectedIndex = len(g.visages) - 1
+				}
+			},
+		},
+	}
 
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
 	ebiten.SetWindowTitle("visage")
