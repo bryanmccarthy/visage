@@ -44,6 +44,8 @@ type Button struct {
 	action  func(selectedIndex int)
 }
 
+var pressedKeys = map[ebiten.Key]bool{}
+
 const (
 	handleSize        = 6
 	handleNone        = 0
@@ -202,6 +204,44 @@ func (g *Game) Update() error {
 		g.resizeHandle = handleNone
 	}
 
+	if g.selected {
+		if ebiten.IsKeyPressed(ebiten.KeyE) {
+			if !pressedKeys[ebiten.KeyE] {
+				g.buttons[0].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyE] = true
+		} else {
+			pressedKeys[ebiten.KeyE] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyF) {
+			if !pressedKeys[ebiten.KeyF] {
+				g.buttons[1].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyF] = true
+		} else {
+			pressedKeys[ebiten.KeyF] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyR) {
+			if !pressedKeys[ebiten.KeyR] {
+				g.buttons[2].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyR] = true
+		} else {
+			pressedKeys[ebiten.KeyR] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyD) {
+			if !pressedKeys[ebiten.KeyD] {
+				g.buttons[3].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyD] = true
+		} else {
+			pressedKeys[ebiten.KeyD] = false
+		}
+	}
+
 	return nil
 }
 
@@ -279,6 +319,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	copyIcon, _, err := ebitenutil.NewImageFromFile("assets/copy.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	g.buttons = []Button{
 		{
 			w:       26,
@@ -349,6 +394,29 @@ func main() {
 				g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
 				g.selected = false
 				g.selectedIndex = 0
+			},
+		},
+		{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			yOffset: 154,
+			image:   copyIcon,
+			action: func(selectedIndex int) {
+				visage := g.visages[selectedIndex]
+				newImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
+				newImage.DrawImage(visage.image, nil)
+
+				newVisage := Visage{
+					x:     visage.x + 30,
+					y:     visage.y + 30,
+					w:     visage.w,
+					h:     visage.h,
+					scale: visage.scale,
+					image: newImage,
+				}
+				g.visages = append(g.visages, newVisage)
+				g.selectedIndex = len(g.visages) - 1
 			},
 		},
 	}
