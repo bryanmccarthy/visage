@@ -240,6 +240,15 @@ func (g *Game) Update() error {
 		} else {
 			pressedKeys[ebiten.KeyD] = false
 		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyC) {
+			if !pressedKeys[ebiten.KeyC] {
+				g.buttons[4].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyC] = true
+		} else {
+			pressedKeys[ebiten.KeyC] = false
+		}
 	}
 
 	return nil
