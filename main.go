@@ -3,6 +3,7 @@ package main
 import (
 	"io/fs"
 	"log"
+	"math"
 	"sync"
 
 	"image/color"
@@ -223,7 +224,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	if g.selected {
 		v := g.visages[g.selectedIndex]
-		uiColor := color.RGBA{52, 13, 79, 240}
+		uiColor := color.RGBA{52, 13, 79, 210}
 
 		// Draw border
 		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), 1, uiColor, false)
@@ -239,11 +240,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 		// Draw buttons
 		for _, button := range g.buttons {
-			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), color.RGBA{240, 235, 243, 240}, false)
+			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), uiColor, false)
 
 			op := &ebiten.DrawImageOptions{}
+			op.Filter = ebiten.FilterLinear
 			op.GeoM.Scale(float64(button.w)/float64(button.image.Bounds().Dx()), float64(button.h)/float64(button.image.Bounds().Dy()))
-			op.GeoM.Translate(float64(v.x+button.xOffset), float64(v.y+button.yOffset))
+			op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(v.y+button.yOffset+2)) // +2 for icon padding
 			screen.DrawImage(button.image, op)
 		}
 	}
@@ -261,28 +263,74 @@ func main() {
 		log.Fatal(err)
 	}
 
+	flipIcon, _, err := ebitenutil.NewImageFromFile("assets/flip.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rotateIcon, _, err := ebitenutil.NewImageFromFile("assets/rotate.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	g.buttons = []Button{
 		{
-			w:       30,
-			h:       30,
+			w:       26,
+			h:       26,
 			xOffset: -36,
 			yOffset: 10,
 			image:   moveIcon,
 			action: func(selectedIndex int) {
-				log.Println("Button clicked!")
-				log.Printf("Selected index: %d", selectedIndex)
 				visage := g.visages[selectedIndex]
 
-				if g.selectedIndex == len(g.visages)-1 {
-					// Move to back if already at the top
+				if g.selectedIndex == len(g.visages)-1 { // Move to back if already at the top
 					g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
 					g.selectedIndex = 0
-				} else {
-					// Move to top
+				} else { // Move to top
 					g.visages = append(g.visages[:g.selectedIndex], g.visages[g.selectedIndex+1:]...)
 					g.visages = append(g.visages, visage)
 					g.selectedIndex = len(g.visages) - 1
 				}
+			},
+		},
+		{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			yOffset: 46,
+			image:   flipIcon,
+			action: func(selectedIndex int) {
+				visage := g.visages[selectedIndex]
+				flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
+				op := &ebiten.DrawImageOptions{}
+				op.GeoM.Scale(-1, 1)
+				op.GeoM.Translate(float64(visage.image.Bounds().Dx()), 0)
+				flippedImage.DrawImage(visage.image, op)
+				visage.image = flippedImage
+				g.visages[selectedIndex] = visage
+			},
+		},
+		{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			yOffset: 82,
+			image:   rotateIcon,
+			action: func(selectedIndex int) {
+				visage := g.visages[selectedIndex]
+				rotatedImage := ebiten.NewImage(visage.image.Bounds().Dy(), visage.image.Bounds().Dx())
+				op := &ebiten.DrawImageOptions{}
+
+				// Translate to origin, rotate, translate back
+				op.GeoM.Translate(-float64(visage.image.Bounds().Dx())/2, -float64(visage.image.Bounds().Dy())/2)
+				op.GeoM.Rotate(math.Pi / 2)
+				op.GeoM.Translate(float64(visage.image.Bounds().Dy())/2, float64(visage.image.Bounds().Dx())/2)
+
+				rotatedImage.DrawImage(visage.image, op)
+				visage.image = rotatedImage
+				visage.w = rotatedImage.Bounds().Dx()
+				visage.h = rotatedImage.Bounds().Dy()
+				g.visages[selectedIndex] = visage
 			},
 		},
 	}
