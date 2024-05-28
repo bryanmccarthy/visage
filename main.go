@@ -21,26 +21,6 @@ type Visage struct {
 	image *ebiten.Image
 }
 
-type Game struct {
-	visages       []Visage
-	buttons       []Button
-	err           error
-	m             sync.Mutex
-	cursor        ebiten.CursorShapeType
-	selected      bool
-	selectedIndex int
-	dragging      bool
-	dragOffsetX   int
-	dragOffsetY   int
-	resizing      bool
-	resizeHandle  int
-	panning       bool
-	panStartX     int
-	panStartY     int
-	clicking      bool
-	erasing       bool
-}
-
 type Button struct {
 	w, h    int
 	xOffset int
@@ -49,23 +29,52 @@ type Button struct {
 	action  func(selectedIndex int)
 }
 
+type Game struct {
+	visages        []Visage
+	buttons        []Button
+	err            error
+	m              sync.Mutex
+	cursor         ebiten.CursorShapeType
+	selected       bool
+	selectedIndex  int
+	dragging       bool
+	dragOffsetX    int
+	dragOffsetY    int
+	resizing       bool
+	resizeHandle   int
+	panning        bool
+	panStartX      int
+	panStartY      int
+	clicking       bool
+	erasing        bool
+	sliderDragging bool
+	sliderValue    int
+}
+
 var pressedKeys = map[ebiten.Key]bool{}
 
 const (
 	handleArea        = 8
+	handleDisplaySize = 4
 	handleNone        = 0
 	handleTopLeft     = 1
 	handleTopRight    = 2
 	handleBottomLeft  = 3
 	handleBottomRight = 4
 	buttonSize        = 30
+	sliderMin         = 5
+	sliderMax         = 145
+	sliderWidth       = 150
+	sliderHeight      = 8
+	sliderYOffset     = 18
 )
 
 var (
 	colorNeonRed = color.RGBA{255, 32, 78, 255}
 	// colorDarkRed = color.RGBA{160, 21, 62, 255}
 	// colorMaroon  = color.RGBA{93, 14, 65, 255}
-	colorNavy = color.RGBA{0, 34, 77, 255}
+	colorNavy   = color.RGBA{0, 34, 77, 255}
+	colorEraser = color.RGBA{255, 32, 78, 200}
 )
 
 const debug = true
@@ -204,6 +213,10 @@ func (g *Game) Update() error {
 		cursor = ebiten.CursorShapeMove
 	}
 
+	if g.erasing {
+		cursor = ebiten.CursorShapeCrosshair
+	}
+
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 		if !g.dragging && !g.resizing {
 			if g.selected { // Check for resize and button clicks on selected visage
@@ -237,15 +250,26 @@ func (g *Game) Update() error {
 				}
 
 				if g.erasing {
-					log.Println("Erasing at", x, y)
 					v := g.visages[g.selectedIndex]
+
+					sliderMouseOffset := 14
+					// Slider dragging
+					if x >= v.x+(v.w/2)-(sliderWidth/2)-sliderMouseOffset && x <= v.x+(v.w/2)-(sliderWidth/2)+sliderWidth+sliderMouseOffset && y >= v.y+v.h+sliderYOffset-sliderMouseOffset && y <= v.y+v.h+sliderYOffset+sliderHeight+sliderMouseOffset {
+						g.sliderDragging = true
+						g.sliderValue = x - (v.x + (v.w / 2) - (sliderWidth / 2))
+						if g.sliderValue < sliderMin {
+							g.sliderValue = sliderMin
+						} else if g.sliderValue > sliderMax {
+							g.sliderValue = sliderMax
+						}
+					}
 
 					// Outside bounds
 					if g.clicking && x < v.x || x > v.x+v.w || y < v.y || y > v.y+v.h {
 						return nil
 					}
 
-					eraseRadius := 20 // Define the size of the eraser
+					// Erase
 					px := int((float64(x) - float64(v.x)) / v.scale)
 					py := int((float64(y) - float64(v.y)) / v.scale)
 
@@ -254,9 +278,9 @@ func (g *Game) Update() error {
 					pixels := make([]byte, 4*w*h)
 					img.ReadPixels(pixels)
 
-					for dx := -eraseRadius; dx <= eraseRadius; dx++ {
-						for dy := -eraseRadius; dy <= eraseRadius; dy++ {
-							if dx*dx+dy*dy <= eraseRadius*eraseRadius {
+					for dx := -g.sliderValue; dx <= g.sliderValue; dx++ {
+						for dy := -g.sliderValue; dy <= g.sliderValue; dy++ {
+							if dx*dx+dy*dy <= g.sliderValue*g.sliderValue {
 								ex := px + dx
 								ey := py + dy
 								if ex >= 0 && ey >= 0 && ex < w && ey < h {
@@ -329,6 +353,7 @@ func (g *Game) Update() error {
 		g.dragging = false
 		g.resizing = false
 		g.clicking = false
+		g.sliderDragging = false
 		g.resizeHandle = handleNone
 	}
 
@@ -400,7 +425,6 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.selected {
 		v := g.visages[g.selectedIndex]
 
-		handleDisplaySize := 4
 		var borderThickness float32 = 2
 
 		// Draw border
@@ -433,6 +457,18 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(v.y+button.yOffset+2)) // +2 for icon padding
 			screen.DrawImage(button.image, op)
 		}
+
+		// Draw eraser size slider
+		if g.erasing {
+			x, y := ebiten.CursorPosition()
+			// Eraser cursor at mouse position
+			vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue), colorEraser, false)
+			// Slide bar
+			vector.DrawFilledRect(screen, float32(v.x+(v.w/2)-(sliderWidth/2)), float32(v.y+v.h+sliderYOffset), sliderWidth, sliderHeight, colorNavy, false)
+			// Slider ball
+			vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 12, colorNavy, false)
+			vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 10, colorNeonRed, false)
+		}
 	}
 }
 
@@ -441,7 +477,9 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
 }
 
 func main() {
-	g := &Game{}
+	g := &Game{
+		sliderValue: 30,
+	}
 
 	moveIcon, _, err := ebitenutil.NewImageFromFile("assets/move.png")
 	if err != nil {
