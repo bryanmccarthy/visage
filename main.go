@@ -26,6 +26,7 @@ type Game struct {
 	buttons       []Button
 	err           error
 	m             sync.Mutex
+	cursor        ebiten.CursorShapeType
 	selected      bool
 	selectedIndex int
 	dragging      bool
@@ -33,6 +34,9 @@ type Game struct {
 	dragOffsetY   int
 	resizing      bool
 	resizeHandle  int
+	panning       bool
+	panStartX     int
+	panStartY     int
 	clicking      bool
 }
 
@@ -56,6 +60,8 @@ const (
 	buttonSize        = 30
 )
 
+const debug = true
+
 func (g *Game) Update() error {
 	if err := func() error {
 		g.m.Lock()
@@ -64,6 +70,8 @@ func (g *Game) Update() error {
 	}(); err != nil {
 		return err
 	}
+
+	cursor := ebiten.CursorShapeDefault
 
 	if files := ebiten.DroppedFiles(); files != nil {
 		go func() {
@@ -204,6 +212,31 @@ func (g *Game) Update() error {
 		g.resizeHandle = handleNone
 	}
 
+	// Handle panning
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
+		cursor = ebiten.CursorShapeMove
+
+		if !g.panning {
+			g.panStartX = x
+			g.panStartY = y
+			g.panning = true
+		} else {
+			dx := x - g.panStartX
+			dy := y - g.panStartY
+
+			for i := range g.visages {
+				g.visages[i].x += dx
+				g.visages[i].y += dy
+			}
+
+			g.panStartX = x
+			g.panStartY = y
+		}
+	} else {
+		g.panning = false
+		cursor = ebiten.CursorShapeDefault
+	}
+
 	if g.selected {
 		if ebiten.IsKeyPressed(ebiten.KeyE) {
 			if !pressedKeys[ebiten.KeyE] {
@@ -251,6 +284,11 @@ func (g *Game) Update() error {
 		}
 	}
 
+	if g.cursor != cursor {
+		ebiten.SetCursorShape(cursor)
+		g.cursor = cursor
+	}
+
 	return nil
 }
 
@@ -259,6 +297,17 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	g.m.Lock()
 	defer g.m.Unlock()
+
+	if debug {
+		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
+
+		switch ebiten.CursorShape() {
+		case ebiten.CursorShapeDefault:
+			ebitenutil.DebugPrint(screen, "Cursor: Default")
+		case ebiten.CursorShapeMove:
+			ebitenutil.DebugPrint(screen, "Cursor: Move")
+		}
+	}
 
 	if len(g.visages) == 0 {
 		return
