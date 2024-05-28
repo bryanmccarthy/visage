@@ -51,13 +51,20 @@ type Button struct {
 var pressedKeys = map[ebiten.Key]bool{}
 
 const (
-	handleSize        = 6
+	handleArea        = 8
 	handleNone        = 0
 	handleTopLeft     = 1
 	handleTopRight    = 2
 	handleBottomLeft  = 3
 	handleBottomRight = 4
 	buttonSize        = 30
+)
+
+var (
+	colorNeonRed = color.RGBA{255, 32, 78, 255}
+	colorDarkRed = color.RGBA{160, 21, 62, 255}
+	colorMaroon  = color.RGBA{93, 14, 65, 255}
+	colorNavy    = color.RGBA{0, 34, 77, 255}
 )
 
 const debug = true
@@ -142,13 +149,13 @@ func (g *Game) Update() error {
 		imgW := v.w
 		imgH := v.h
 
-		if x >= imgX-handleSize && x <= imgX+handleSize && y >= imgY-handleSize && y <= imgY+handleSize {
+		if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
 			cursor = ebiten.CursorShapeNWSEResize
-		} else if x >= imgX+imgW-handleSize && x <= imgX+imgW+handleSize && y >= imgY-handleSize && y <= imgY+handleSize {
+		} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
 			cursor = ebiten.CursorShapeNESWResize
-		} else if x >= imgX-handleSize && x <= imgX+handleSize && y >= imgY+imgH-handleSize && y <= imgY+imgH+handleSize {
+		} else if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
 			cursor = ebiten.CursorShapeNESWResize
-		} else if x >= imgX+imgW-handleSize && x <= imgX+imgW+handleSize && y >= imgY+imgH-handleSize && y <= imgY+imgH+handleSize {
+		} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
 			cursor = ebiten.CursorShapeNWSEResize
 		}
 	}
@@ -166,16 +173,16 @@ func (g *Game) Update() error {
 				imgW := v.w
 				imgH := v.h
 
-				if x >= imgX-handleSize && x <= imgX+handleSize && y >= imgY-handleSize && y <= imgY+handleSize {
+				if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
 					g.resizing = true
 					g.resizeHandle = handleTopLeft
-				} else if x >= imgX+imgW-handleSize && x <= imgX+imgW+handleSize && y >= imgY-handleSize && y <= imgY+handleSize {
+				} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
 					g.resizing = true
 					g.resizeHandle = handleTopRight
-				} else if x >= imgX-handleSize && x <= imgX+handleSize && y >= imgY+imgH-handleSize && y <= imgY+imgH+handleSize {
+				} else if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
 					g.resizing = true
 					g.resizeHandle = handleBottomLeft
-				} else if x >= imgX+imgW-handleSize && x <= imgX+imgW+handleSize && y >= imgY+imgH-handleSize && y <= imgY+imgH+handleSize {
+				} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
 					g.resizing = true
 					g.resizeHandle = handleBottomRight
 				}
@@ -326,7 +333,7 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{188, 184, 191, 255})
+	screen.Fill(color.RGBA{240, 235, 230, 255})
 
 	g.m.Lock()
 	defer g.m.Unlock()
@@ -362,23 +369,30 @@ func (g *Game) Draw(screen *ebiten.Image) {
 
 	if g.selected {
 		v := g.visages[g.selectedIndex]
-		uiColor := color.RGBA{52, 13, 79, 210}
+
+		handleDisplaySize := 4
+		var borderThickness float32 = 2
 
 		// Draw border
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), 1, uiColor, false)
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w), 1, uiColor, false)
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), 1, float32(v.h), uiColor, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), 1, float32(v.h), uiColor, false)
+		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), borderThickness, colorNavy, false)
+		vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w)+borderThickness, borderThickness, colorNavy, false)
+		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), borderThickness, float32(v.h), colorNavy, false)
+		vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), borderThickness, float32(v.h)+borderThickness, colorNavy, false)
 
-		// Draw resize handles
-		vector.DrawFilledRect(screen, float32(v.x-handleSize), float32(v.y-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w-handleSize), float32(v.y-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
-		vector.DrawFilledRect(screen, float32(v.x-handleSize), float32(v.y+v.h-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w-handleSize), float32(v.y+v.h-handleSize), float32(handleSize*2), float32(handleSize*2), uiColor, false)
+		// Draw resize handles outer
+		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
+		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
+		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
+		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
+		// Draw resize handles inner
+		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
+		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
+		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
+		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
 
 		// Draw buttons
 		for _, button := range g.buttons {
-			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), uiColor, false)
+			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
 
 			op := &ebiten.DrawImageOptions{}
 			op.Filter = ebiten.FilterLinear
