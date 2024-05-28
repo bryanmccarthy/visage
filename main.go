@@ -71,8 +71,6 @@ func (g *Game) Update() error {
 		return err
 	}
 
-	cursor := ebiten.CursorShapeDefault
-
 	if files := ebiten.DroppedFiles(); files != nil {
 		go func() {
 			if err := fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -126,10 +124,40 @@ func (g *Game) Update() error {
 	}
 
 	x, y := ebiten.CursorPosition()
-	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
-		log.Printf("Mouse position: %d, %d", x, y)
-		log.Printf("array: %v", g.visages)
+	cursor := ebiten.CursorShapeDefault
 
+	if g.selected { // Button Hover Cursor
+		v := g.visages[g.selectedIndex]
+		for _, button := range g.buttons {
+			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
+				cursor = ebiten.CursorShapePointer
+			}
+		}
+	}
+
+	if g.selected { // Resize Hover Cursor
+		v := g.visages[g.selectedIndex]
+		imgX := v.x
+		imgY := v.y
+		imgW := v.w
+		imgH := v.h
+
+		if x >= imgX-handleSize && x <= imgX+handleSize && y >= imgY-handleSize && y <= imgY+handleSize {
+			cursor = ebiten.CursorShapeNWSEResize
+		} else if x >= imgX+imgW-handleSize && x <= imgX+imgW+handleSize && y >= imgY-handleSize && y <= imgY+handleSize {
+			cursor = ebiten.CursorShapeNESWResize
+		} else if x >= imgX-handleSize && x <= imgX+handleSize && y >= imgY+imgH-handleSize && y <= imgY+imgH+handleSize {
+			cursor = ebiten.CursorShapeNESWResize
+		} else if x >= imgX+imgW-handleSize && x <= imgX+imgW+handleSize && y >= imgY+imgH-handleSize && y <= imgY+imgH+handleSize {
+			cursor = ebiten.CursorShapeNWSEResize
+		}
+	}
+
+	if g.dragging || g.panning { // Drag or Pan Cursor
+		cursor = ebiten.CursorShapeMove
+	}
+
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
 		if !g.dragging && !g.resizing {
 			if g.selected { // Check for resize and button clicks on selected visage
 				v := g.visages[g.selectedIndex]
@@ -179,6 +207,10 @@ func (g *Game) Update() error {
 						break
 					}
 				}
+
+				if !g.dragging { // Deselect if no visage is dragged (click outside)
+					g.selected = false
+				}
 			}
 		} else if g.dragging {
 			v := &g.visages[g.selectedIndex]
@@ -192,17 +224,21 @@ func (g *Game) Update() error {
 				v.h += v.y - y
 				v.x = x
 				v.y = y
+				cursor = ebiten.CursorShapeNWSEResize
 			case handleTopRight:
 				v.w = x - v.x
 				v.h += v.y - y
 				v.y = y
+				cursor = ebiten.CursorShapeNESWResize
 			case handleBottomLeft:
 				v.w += v.x - x
 				v.h = y - v.y
 				v.x = x
+				cursor = ebiten.CursorShapeNESWResize
 			case handleBottomRight:
 				v.w = x - v.x
 				v.h = y - v.y
+				cursor = ebiten.CursorShapeNWSEResize
 			}
 		}
 	} else {
@@ -214,8 +250,6 @@ func (g *Game) Update() error {
 
 	// Handle panning
 	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
-		cursor = ebiten.CursorShapeMove
-
 		if !g.panning {
 			g.panStartX = x
 			g.panStartY = y
@@ -234,7 +268,6 @@ func (g *Game) Update() error {
 		}
 	} else {
 		g.panning = false
-		cursor = ebiten.CursorShapeDefault
 	}
 
 	if g.selected {
@@ -284,7 +317,7 @@ func (g *Game) Update() error {
 		}
 	}
 
-	if g.cursor != cursor {
+	if g.cursor != cursor { // Only set cursor if it has changed
 		ebiten.SetCursorShape(cursor)
 		g.cursor = cursor
 	}
@@ -306,6 +339,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 			ebitenutil.DebugPrint(screen, "Cursor: Default")
 		case ebiten.CursorShapeMove:
 			ebitenutil.DebugPrint(screen, "Cursor: Move")
+		case ebiten.CursorShapeNESWResize:
+			ebitenutil.DebugPrint(screen, "Cursor: NESW Resize")
+		case ebiten.CursorShapeNWSEResize:
+			ebitenutil.DebugPrint(screen, "Cursor: NWSE Resize")
+		case ebiten.CursorShapePointer:
+			ebitenutil.DebugPrint(screen, "Cursor: Pointer")
 		}
 	}
 
