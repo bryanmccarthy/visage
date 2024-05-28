@@ -17,7 +17,6 @@ import (
 type Visage struct {
 	x, y  int
 	w, h  int
-	scale float64
 	image *ebiten.Image
 }
 
@@ -123,7 +122,6 @@ func (g *Game) Update() error {
 					y:     10,
 					w:     eimg.Bounds().Dx(),
 					h:     eimg.Bounds().Dy(),
-					scale: 1,
 					image: eimg,
 				}
 				g.visages = append(g.visages, newVisage)
@@ -250,7 +248,7 @@ func (g *Game) Update() error {
 				}
 
 				if g.erasing {
-					v := g.visages[g.selectedIndex]
+					v := &g.visages[g.selectedIndex]
 
 					sliderMouseOffset := 14
 					// Slider dragging
@@ -264,37 +262,25 @@ func (g *Game) Update() error {
 						}
 					}
 
-					// Outside bounds
-					if g.clicking && x < v.x || x > v.x+v.w || y < v.y || y > v.y+v.h {
-						return nil
-					}
+					// Erase pixels
+					px := int(float64(x-v.x) * (float64(v.image.Bounds().Dx()) / float64(v.w)))
+					py := int(float64(y-v.y) * (float64(v.image.Bounds().Dy()) / float64(v.h)))
 
-					// Erase
-					px := int((float64(x) - float64(v.x)) / v.scale)
-					py := int((float64(y) - float64(v.y)) / v.scale)
+					w, h := v.image.Bounds().Dx(), v.image.Bounds().Dy()
 
-					img := v.image
-					w, h := img.Bounds().Dx(), img.Bounds().Dy()
-					pixels := make([]byte, 4*w*h)
-					img.ReadPixels(pixels)
+					radiusSquared := g.sliderValue * g.sliderValue
 
 					for dx := -g.sliderValue; dx <= g.sliderValue; dx++ {
 						for dy := -g.sliderValue; dy <= g.sliderValue; dy++ {
-							if dx*dx+dy*dy <= g.sliderValue*g.sliderValue {
+							if dx*dx+dy*dy <= radiusSquared {
 								ex := px + dx
 								ey := py + dy
 								if ex >= 0 && ey >= 0 && ex < w && ey < h {
-									idx := 4 * (ey*w + ex)
-									pixels[idx+0] = 0
-									pixels[idx+1] = 0
-									pixels[idx+2] = 0
-									pixels[idx+3] = 0
+									v.image.Set(ex, ey, color.RGBA{0, 0, 0, 0})
 								}
 							}
 						}
 					}
-
-					img.WritePixels(pixels)
 				}
 			}
 
@@ -326,27 +312,32 @@ func (g *Game) Update() error {
 			v.y = y - g.dragOffsetY
 		} else if g.resizing {
 			v := &g.visages[g.selectedIndex]
+
 			switch g.resizeHandle {
 			case handleTopLeft:
 				v.w += v.x - x
 				v.h += v.y - y
 				v.x = x
 				v.y = y
-				cursor = ebiten.CursorShapeNWSEResize
 			case handleTopRight:
 				v.w = x - v.x
 				v.h += v.y - y
 				v.y = y
-				cursor = ebiten.CursorShapeNESWResize
 			case handleBottomLeft:
 				v.w += v.x - x
 				v.h = y - v.y
 				v.x = x
-				cursor = ebiten.CursorShapeNESWResize
 			case handleBottomRight:
 				v.w = x - v.x
 				v.h = y - v.y
-				cursor = ebiten.CursorShapeNWSEResize
+			}
+
+			// Prevent negative width and height
+			if v.w < 1 {
+				v.w = 1
+			}
+			if v.h < 1 {
+				v.h = 1
 			}
 		}
 	} else {
@@ -581,6 +572,7 @@ func main() {
 				g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
 				g.selected = false
 				g.selectedIndex = 0
+				g.erasing = false
 			},
 		},
 		{
@@ -599,7 +591,6 @@ func main() {
 					y:     visage.y + 30,
 					w:     visage.w,
 					h:     visage.h,
-					scale: visage.scale,
 					image: newImage,
 				}
 				g.visages = append(g.visages, newVisage)
