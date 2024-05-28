@@ -38,6 +38,7 @@ type Game struct {
 	panStartX     int
 	panStartY     int
 	clicking      bool
+	erasing       bool
 }
 
 type Button struct {
@@ -62,9 +63,9 @@ const (
 
 var (
 	colorNeonRed = color.RGBA{255, 32, 78, 255}
-	colorDarkRed = color.RGBA{160, 21, 62, 255}
-	colorMaroon  = color.RGBA{93, 14, 65, 255}
-	colorNavy    = color.RGBA{0, 34, 77, 255}
+	// colorDarkRed = color.RGBA{160, 21, 62, 255}
+	// colorMaroon  = color.RGBA{93, 14, 65, 255}
+	colorNavy = color.RGBA{0, 34, 77, 255}
 )
 
 const debug = true
@@ -133,30 +134,69 @@ func (g *Game) Update() error {
 	x, y := ebiten.CursorPosition()
 	cursor := ebiten.CursorShapeDefault
 
-	if g.selected { // Button Hover Cursor
+	if g.selected {
 		v := g.visages[g.selectedIndex]
-		for _, button := range g.buttons {
+
+		for _, button := range g.buttons { // Button Hover Cursor
 			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
 				cursor = ebiten.CursorShapePointer
 			}
 		}
-	}
 
-	if g.selected { // Resize Hover Cursor
-		v := g.visages[g.selectedIndex]
-		imgX := v.x
-		imgY := v.y
-		imgW := v.w
-		imgH := v.h
+		if x >= v.x-handleArea && x <= v.x+handleArea && y >= v.y-handleArea && y <= v.y+handleArea {
+			cursor = ebiten.CursorShapeNWSEResize
+		} else if x >= v.x+v.w-handleArea && x <= v.x+v.w+handleArea && y >= v.y-handleArea && y <= v.y+handleArea {
+			cursor = ebiten.CursorShapeNESWResize
+		} else if x >= v.x-handleArea && x <= v.x+handleArea && y >= v.y+v.h-handleArea && y <= v.y+v.h+handleArea {
+			cursor = ebiten.CursorShapeNESWResize
+		} else if x >= v.x+v.w-handleArea && x <= v.x+v.w+handleArea && y >= v.y+v.h-handleArea && y <= v.y+v.h+handleArea {
+			cursor = ebiten.CursorShapeNWSEResize
+		}
 
-		if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
-			cursor = ebiten.CursorShapeNWSEResize
-		} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
-			cursor = ebiten.CursorShapeNESWResize
-		} else if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
-			cursor = ebiten.CursorShapeNESWResize
-		} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
-			cursor = ebiten.CursorShapeNWSEResize
+		// Keybinds
+		if ebiten.IsKeyPressed(ebiten.KeyE) {
+			if !pressedKeys[ebiten.KeyE] {
+				g.buttons[0].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyE] = true
+		} else {
+			pressedKeys[ebiten.KeyE] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyF) {
+			if !pressedKeys[ebiten.KeyF] {
+				g.buttons[1].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyF] = true
+		} else {
+			pressedKeys[ebiten.KeyF] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyR) {
+			if !pressedKeys[ebiten.KeyR] {
+				g.buttons[2].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyR] = true
+		} else {
+			pressedKeys[ebiten.KeyR] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyD) {
+			if !pressedKeys[ebiten.KeyD] {
+				g.buttons[3].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyD] = true
+		} else {
+			pressedKeys[ebiten.KeyD] = false
+		}
+
+		if ebiten.IsKeyPressed(ebiten.KeyC) {
+			if !pressedKeys[ebiten.KeyC] {
+				g.buttons[4].action(g.selectedIndex)
+			}
+			pressedKeys[ebiten.KeyC] = true
+		} else {
+			pressedKeys[ebiten.KeyC] = false
 		}
 	}
 
@@ -187,17 +227,54 @@ func (g *Game) Update() error {
 					g.resizeHandle = handleBottomRight
 				}
 
-				if !g.clicking {
+				if !g.clicking { // Handle button clicks
 					for _, button := range g.buttons {
 						if x >= imgX+button.xOffset && x <= imgX+button.xOffset+buttonSize && y >= imgY+button.yOffset && y <= imgY+button.yOffset+buttonSize {
 							button.action(g.selectedIndex)
-							g.clicking = true
+							g.clicking = true // Prevent double click
 						}
 					}
 				}
+
+				if g.erasing {
+					log.Println("Erasing at", x, y)
+					v := g.visages[g.selectedIndex]
+
+					// Outside bounds
+					if g.clicking && x < v.x || x > v.x+v.w || y < v.y || y > v.y+v.h {
+						return nil
+					}
+
+					eraseRadius := 20 // Define the size of the eraser
+					px := int((float64(x) - float64(v.x)) / v.scale)
+					py := int((float64(y) - float64(v.y)) / v.scale)
+
+					img := v.image
+					w, h := img.Bounds().Dx(), img.Bounds().Dy()
+					pixels := make([]byte, 4*w*h)
+					img.ReadPixels(pixels)
+
+					for dx := -eraseRadius; dx <= eraseRadius; dx++ {
+						for dy := -eraseRadius; dy <= eraseRadius; dy++ {
+							if dx*dx+dy*dy <= eraseRadius*eraseRadius {
+								ex := px + dx
+								ey := py + dy
+								if ex >= 0 && ey >= 0 && ex < w && ey < h {
+									idx := 4 * (ey*w + ex)
+									pixels[idx+0] = 0
+									pixels[idx+1] = 0
+									pixels[idx+2] = 0
+									pixels[idx+3] = 0
+								}
+							}
+						}
+					}
+
+					img.WritePixels(pixels)
+				}
 			}
 
-			if !g.resizing && !g.clicking { // Check for drag after resize or click to prevent overlap reselection
+			if !g.resizing && !g.clicking && !g.erasing { // Check for drag after resize, click, or erase to prevent overlap reselection
 				for i := len(g.visages) - 1; i >= 0; i-- {
 					v := g.visages[i]
 					imgX := v.x
@@ -277,53 +354,6 @@ func (g *Game) Update() error {
 		g.panning = false
 	}
 
-	if g.selected {
-		if ebiten.IsKeyPressed(ebiten.KeyE) {
-			if !pressedKeys[ebiten.KeyE] {
-				g.buttons[0].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyE] = true
-		} else {
-			pressedKeys[ebiten.KeyE] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyF) {
-			if !pressedKeys[ebiten.KeyF] {
-				g.buttons[1].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyF] = true
-		} else {
-			pressedKeys[ebiten.KeyF] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyR) {
-			if !pressedKeys[ebiten.KeyR] {
-				g.buttons[2].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyR] = true
-		} else {
-			pressedKeys[ebiten.KeyR] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyD) {
-			if !pressedKeys[ebiten.KeyD] {
-				g.buttons[3].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyD] = true
-		} else {
-			pressedKeys[ebiten.KeyD] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyC) {
-			if !pressedKeys[ebiten.KeyC] {
-				g.buttons[4].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyC] = true
-		} else {
-			pressedKeys[ebiten.KeyC] = false
-		}
-	}
-
 	if g.cursor != cursor { // Only set cursor if it has changed
 		ebiten.SetCursorShape(cursor)
 		g.cursor = cursor
@@ -391,8 +421,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
 
 		// Draw buttons
-		for _, button := range g.buttons {
+		for i, button := range g.buttons {
 			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
+			if g.erasing && i == 5 {
+				vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
+			}
 
 			op := &ebiten.DrawImageOptions{}
 			op.Filter = ebiten.FilterLinear
@@ -431,6 +464,11 @@ func main() {
 	}
 
 	copyIcon, _, err := ebitenutil.NewImageFromFile("assets/copy.png")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	eraseIcon, _, err := ebitenutil.NewImageFromFile("assets/erase.png")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -528,6 +566,17 @@ func main() {
 				}
 				g.visages = append(g.visages, newVisage)
 				g.selectedIndex = len(g.visages) - 1
+			},
+		},
+		{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			yOffset: 190,
+			image:   eraseIcon,
+			action: func(selectedIndex int) {
+				g.erasing = !g.erasing
+				log.Println("Erasing: ", g.erasing)
 			},
 		},
 	}
