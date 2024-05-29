@@ -157,7 +157,7 @@ func (g *Game) handleCursor(x, y int) {
 
 		for i, button := range g.buttons { // Button Hover Cursor
 			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
-				if g.erasing && i != 5 { // All buttons except eraser are disabled when erasing
+				if g.erasing && !containsIndex([]int{1, 2, 3}, i) {
 					cursor = ebiten.CursorShapeNotAllowed
 				} else {
 					cursor = ebiten.CursorShapePointer
@@ -180,17 +180,9 @@ func (g *Game) handleCursor(x, y int) {
 		}
 	}
 
-	// if g.dragging || g.panning {
-	// 	cursor = ebiten.CursorShapeMove
-	// }
-
 	if g.panning {
 		cursor = ebiten.CursorShapeMove
 	}
-
-	// if g.erasing {
-	// 	cursor = ebiten.CursorShapeCrosshair
-	// }
 
 	if g.cursor != cursor {
 		ebiten.SetCursorShape(cursor)
@@ -306,10 +298,19 @@ func (g *Game) handleErasing(x, y int) {
 	g.erasePixels(v, px, py)
 }
 
+func containsIndex(arr []int, val int) bool {
+	for _, v := range arr {
+		if v == val {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *Game) checkButtonClicks(x, y int) {
 	v := g.visages[g.selectedIndex]
 	for i, button := range g.buttons {
-		if g.erasing && i != 5 { // Prevent clicking on buttons when erasing
+		if g.erasing && !containsIndex([]int{1, 2, 3}, i) {
 			continue
 		}
 
@@ -485,7 +486,7 @@ func (g *Game) drawResizeHandles(screen *ebiten.Image, v Visage) {
 func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
 	for i, button := range g.buttons {
 		vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
-		if g.erasing && i == 5 {
+		if g.erasing && containsIndex([]int{1, 2, 3}, i) {
 			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
 		}
 
@@ -598,9 +599,9 @@ func loadAssets(g *Game) {
 		{"assets/move.png", g.moveAction},
 		{"assets/flip.png", g.flipAction},
 		{"assets/rotate.png", g.rotateAction},
+		{"assets/erase.png", g.eraseAction},
 		{"assets/delete.png", g.deleteAction},
 		{"assets/copy.png", g.copyAction},
-		{"assets/erase.png", g.eraseAction},
 	}
 
 	for i, icon := range icons {
