@@ -217,6 +217,10 @@ func (g *Game) handleMouseActions(x, y int) {
 	} else if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
 		g.handlePanning(x, y)
 	} else {
+		if g.resizing {
+			g.handleResizeMouseRelease()
+		}
+
 		g.handleMouseRelease()
 	}
 }
@@ -372,21 +376,44 @@ func (g *Game) resizeSelectedVisage(x, y int) {
 		v.w = x - v.x
 		v.h = y - v.y
 	}
-	if v.w < 1 {
-		v.w = 1
+}
+
+func (g *Game) handleResizeMouseRelease() {
+	v := &g.visages[g.selectedIndex]
+
+	if v.w < 0 {
+		v.x += v.w
+		v.w = -v.w
+		// flip image horizontally
+		flippedImage := ebiten.NewImage(v.image.Bounds().Dx(), v.image.Bounds().Dy())
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(-1, 1)
+		op.GeoM.Translate(float64(v.image.Bounds().Dx()), 0)
+		flippedImage.DrawImage(v.image, op)
+		v.image = flippedImage
 	}
-	if v.h < 1 {
-		v.h = 1
+
+	if v.h < 0 {
+		v.y += v.h
+		v.h = -v.h
+		// flip image vertically
+		flippedImage := ebiten.NewImage(v.image.Bounds().Dx(), v.image.Bounds().Dy())
+		op := &ebiten.DrawImageOptions{}
+		op.GeoM.Scale(1, -1)
+		op.GeoM.Translate(0, float64(v.image.Bounds().Dy()))
+		flippedImage.DrawImage(v.image, op)
+		v.image = flippedImage
 	}
+
+	g.resizing = false
+	g.resizeHandle = handleNone
 }
 
 func (g *Game) handleMouseRelease() {
 	g.dragging = false
-	g.resizing = false
 	g.clicking = false
 	g.panning = false
 	g.sliderDragging = false
-	g.resizeHandle = handleNone
 }
 
 func (g *Game) resetActions() {
@@ -608,14 +635,13 @@ func (g *Game) moveAction(selectedIndex int) {
 }
 
 func (g *Game) flipAction(selectedIndex int) {
-	visage := g.visages[selectedIndex]
+	visage := &g.visages[selectedIndex]
 	flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Scale(-1, 1)
 	op.GeoM.Translate(float64(visage.image.Bounds().Dx()), 0)
 	flippedImage.DrawImage(visage.image, op)
 	visage.image = flippedImage
-	g.visages[selectedIndex] = visage
 }
 
 func (g *Game) rotateAction(selectedIndex int) {
