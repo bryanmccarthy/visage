@@ -286,8 +286,19 @@ func (g *Game) handleErasing(x, y int) {
 		g.updateSliderValue(x - (v.x + (v.w / 2) - (sliderWidth / 2)))
 	}
 
-	// Check if outofbounds
+	// Check if outofbounds + an offset for deselecting the eraser
+	outOfBoundsOffset := 30
+	if x < v.x-outOfBoundsOffset || x > v.x+v.w+outOfBoundsOffset || y < v.y-outOfBoundsOffset || y > v.y+v.h+sliderYOffset+sliderMouseOffset+outOfBoundsOffset {
+		g.erasing = false
+		return
+	}
+
+	// Any outofbounds don't erase
 	if x < v.x || x > v.x+v.w || y < v.y || y > v.y+v.h+sliderYOffset {
+		return
+	}
+
+	if g.resizing { // Prevent erasing when resizing
 		return
 	}
 
@@ -344,8 +355,7 @@ func (g *Game) checkVisageDrag(x, y int) {
 		}
 	}
 
-	if !g.dragging {
-		log.Println("No visage selected")
+	if !g.dragging { // Clicked outside of visage
 		g.selected = false
 	}
 }
@@ -414,17 +424,6 @@ func (g *Game) handleMouseRelease() {
 	g.clicking = false
 	g.panning = false
 	g.sliderDragging = false
-}
-
-func (g *Game) resetActions() {
-	g.dragging = false
-	g.resizing = false
-	g.clicking = false
-	g.panning = false
-	g.erasing = false
-	g.selected = false
-	g.sliderDragging = false
-	g.resizeHandle = handleNone
 }
 
 func (g *Game) handlePanning(x, y int) {
@@ -623,6 +622,10 @@ func loadAssets(g *Game) {
 }
 
 func (g *Game) moveAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected || g.erasing {
+		return
+	}
+
 	visage := g.visages[selectedIndex]
 	if g.selectedIndex == len(g.visages)-1 {
 		g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
@@ -635,6 +638,10 @@ func (g *Game) moveAction(selectedIndex int) {
 }
 
 func (g *Game) flipAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected {
+		return
+	}
+
 	visage := &g.visages[selectedIndex]
 	flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
 	op := &ebiten.DrawImageOptions{}
@@ -645,6 +652,10 @@ func (g *Game) flipAction(selectedIndex int) {
 }
 
 func (g *Game) rotateAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected {
+		return
+	}
+
 	visage := g.visages[selectedIndex]
 	rotatedImage := ebiten.NewImage(visage.image.Bounds().Dy(), visage.image.Bounds().Dx())
 	op := &ebiten.DrawImageOptions{}
@@ -659,16 +670,25 @@ func (g *Game) rotateAction(selectedIndex int) {
 }
 
 func (g *Game) deleteAction(selectedIndex int) {
-	g.resetActions()
+	if len(g.visages) == 0 || !g.selected || g.erasing {
+		return
+	}
 
 	if len(g.visages) <= 1 {
 		g.visages = nil
+		g.selected = false
 	} else {
 		g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
+		g.selected = true
+		g.selectedIndex = len(g.visages) - 1
 	}
 }
 
 func (g *Game) copyAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected || g.erasing {
+		return
+	}
+
 	visage := g.visages[selectedIndex]
 	newImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
 	newImage.DrawImage(visage.image, nil)
