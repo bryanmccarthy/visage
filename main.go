@@ -50,6 +50,7 @@ type Game struct {
 	sliderValue    int
 }
 
+var keyActions = map[ebiten.Key]func(int){}
 var pressedKeys = map[ebiten.Key]bool{}
 
 const (
@@ -181,14 +182,6 @@ func (g *Game) handleCursor(x, y int) {
 }
 
 func (g *Game) handleKeybinds() {
-	keyActions := map[ebiten.Key]func(int){
-		ebiten.KeyE: g.buttons[0].action,
-		ebiten.KeyF: g.buttons[1].action,
-		ebiten.KeyR: g.buttons[2].action,
-		ebiten.KeyD: g.buttons[3].action,
-		ebiten.KeyC: g.buttons[4].action,
-	}
-
 	for key, action := range keyActions {
 		if ebiten.IsKeyPressed(key) {
 			if !pressedKeys[key] {
@@ -380,6 +373,86 @@ func (g *Game) handlePanning(x, y int) {
 	}
 }
 
+func (g *Game) drawVisages(screen *ebiten.Image) {
+	for _, visage := range g.visages {
+		op := &ebiten.DrawImageOptions{}
+		op.Filter = ebiten.FilterLinear
+		op.GeoM.Scale(float64(visage.w)/float64(visage.image.Bounds().Dx()), float64(visage.h)/float64(visage.image.Bounds().Dy()))
+		op.GeoM.Translate(float64(visage.x), float64(visage.y))
+		screen.DrawImage(visage.image, op)
+	}
+
+	if g.selected {
+		v := g.visages[g.selectedIndex]
+		g.drawVisageBorder(screen, v)
+		g.drawResizeHandles(screen, v)
+		g.drawButtons(screen, v)
+		if g.erasing {
+			g.drawEraser(screen, v)
+		}
+	}
+}
+
+func (g *Game) drawVisageBorder(screen *ebiten.Image, v Visage) {
+	var borderThickness float32 = 2
+	vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), borderThickness, colorNavy, false)
+	vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w)+borderThickness, borderThickness, colorNavy, false)
+	vector.DrawFilledRect(screen, float32(v.x), float32(v.y), borderThickness, float32(v.h), colorNavy, false)
+	vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), borderThickness, float32(v.h)+borderThickness, colorNavy, false)
+}
+
+func (g *Game) drawResizeHandles(screen *ebiten.Image, v Visage) {
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
+}
+
+func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
+	for i, button := range g.buttons {
+		vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
+		if g.erasing && i == 5 {
+			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
+		}
+
+		op := &ebiten.DrawImageOptions{}
+		op.Filter = ebiten.FilterLinear
+		op.GeoM.Scale(float64(button.w)/float64(button.image.Bounds().Dx()), float64(button.h)/float64(button.image.Bounds().Dy()))
+		op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(v.y+button.yOffset+2))
+		screen.DrawImage(button.image, op)
+	}
+}
+
+func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
+	x, y := ebiten.CursorPosition()
+	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue), colorEraser, false)
+	vector.DrawFilledRect(screen, float32(v.x+(v.w/2)-(sliderWidth/2)), float32(v.y+v.h+sliderYOffset), sliderWidth, sliderHeight, colorNavy, false)
+	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 12, colorNavy, false)
+	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 10, colorNeonRed, false)
+}
+
+func (g *Game) drawDebugInfo(screen *ebiten.Image) {
+	if debug {
+		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
+		switch ebiten.CursorShape() {
+		case ebiten.CursorShapeDefault:
+			ebitenutil.DebugPrint(screen, "Cursor: Default")
+		case ebiten.CursorShapeMove:
+			ebitenutil.DebugPrint(screen, "Cursor: Move")
+		case ebiten.CursorShapeNESWResize:
+			ebitenutil.DebugPrint(screen, "Cursor: NESW Resize")
+		case ebiten.CursorShapeNWSEResize:
+			ebitenutil.DebugPrint(screen, "Cursor: NWSE Resize")
+		case ebiten.CursorShapePointer:
+			ebitenutil.DebugPrint(screen, "Cursor: Pointer")
+		}
+	}
+}
+
 func (g *Game) Update() error {
 
 	g.handleErrors()
@@ -399,83 +472,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	g.m.Lock()
 	defer g.m.Unlock()
 
-	if debug {
-		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
-
-		switch ebiten.CursorShape() {
-		case ebiten.CursorShapeDefault:
-			ebitenutil.DebugPrint(screen, "Cursor: Default")
-		case ebiten.CursorShapeMove:
-			ebitenutil.DebugPrint(screen, "Cursor: Move")
-		case ebiten.CursorShapeNESWResize:
-			ebitenutil.DebugPrint(screen, "Cursor: NESW Resize")
-		case ebiten.CursorShapeNWSEResize:
-			ebitenutil.DebugPrint(screen, "Cursor: NWSE Resize")
-		case ebiten.CursorShapePointer:
-			ebitenutil.DebugPrint(screen, "Cursor: Pointer")
-		}
-	}
-
-	if len(g.visages) == 0 {
-		return
-	}
-
-	for _, visage := range g.visages {
-		op := &ebiten.DrawImageOptions{}
-		op.Filter = ebiten.FilterLinear
-		op.GeoM.Scale(float64(visage.w)/float64(visage.image.Bounds().Dx()), float64(visage.h)/float64(visage.image.Bounds().Dy()))
-		op.GeoM.Translate(float64(visage.x), float64(visage.y))
-		screen.DrawImage(visage.image, op)
-	}
-
-	if g.selected {
-		v := g.visages[g.selectedIndex]
-
-		var borderThickness float32 = 2
-
-		// Draw border
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), borderThickness, colorNavy, false)
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w)+borderThickness, borderThickness, colorNavy, false)
-		vector.DrawFilledRect(screen, float32(v.x), float32(v.y), borderThickness, float32(v.h), colorNavy, false)
-		vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), borderThickness, float32(v.h)+borderThickness, colorNavy, false)
-
-		// Draw resize handles outer
-		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
-		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
-		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
-		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
-		// Draw resize handles inner
-		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
-		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
-		vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
-		vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
-
-		// Draw buttons
-		for i, button := range g.buttons {
-			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
-			if g.erasing && i == 5 {
-				vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
-			}
-
-			op := &ebiten.DrawImageOptions{}
-			op.Filter = ebiten.FilterLinear
-			op.GeoM.Scale(float64(button.w)/float64(button.image.Bounds().Dx()), float64(button.h)/float64(button.image.Bounds().Dy()))
-			op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(v.y+button.yOffset+2)) // +2 for icon padding
-			screen.DrawImage(button.image, op)
-		}
-
-		// Draw eraser size slider
-		if g.erasing {
-			x, y := ebiten.CursorPosition()
-			// Eraser cursor at mouse position
-			vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue), colorEraser, false)
-			// Slide bar
-			vector.DrawFilledRect(screen, float32(v.x+(v.w/2)-(sliderWidth/2)), float32(v.y+v.h+sliderYOffset), sliderWidth, sliderHeight, colorNavy, false)
-			// Slider ball
-			vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 12, colorNavy, false)
-			vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 10, colorNeonRed, false)
-		}
-	}
+	g.drawDebugInfo(screen)
+	g.drawVisages(screen)
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -487,142 +485,14 @@ func main() {
 		sliderValue: 30,
 	}
 
-	moveIcon, _, err := ebitenutil.NewImageFromFile("assets/move.png")
-	if err != nil {
-		log.Fatal(err)
-	}
+	loadAssets(g)
 
-	flipIcon, _, err := ebitenutil.NewImageFromFile("assets/flip.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	rotateIcon, _, err := ebitenutil.NewImageFromFile("assets/rotate.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	deleteIcon, _, err := ebitenutil.NewImageFromFile("assets/delete.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	copyIcon, _, err := ebitenutil.NewImageFromFile("assets/copy.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	eraseIcon, _, err := ebitenutil.NewImageFromFile("assets/erase.png")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	g.buttons = []Button{
-		{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			yOffset: 10,
-			image:   moveIcon,
-			action: func(selectedIndex int) {
-				visage := g.visages[selectedIndex]
-
-				if g.selectedIndex == len(g.visages)-1 { // Move to back if already at the top
-					g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
-					g.selectedIndex = 0
-				} else { // Move to top
-					g.visages = append(g.visages[:g.selectedIndex], g.visages[g.selectedIndex+1:]...)
-					g.visages = append(g.visages, visage)
-					g.selectedIndex = len(g.visages) - 1
-				}
-			},
-		},
-		{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			yOffset: 46,
-			image:   flipIcon,
-			action: func(selectedIndex int) {
-				visage := g.visages[selectedIndex]
-				flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
-				op := &ebiten.DrawImageOptions{}
-				op.GeoM.Scale(-1, 1)
-				op.GeoM.Translate(float64(visage.image.Bounds().Dx()), 0)
-				flippedImage.DrawImage(visage.image, op)
-				visage.image = flippedImage
-				g.visages[selectedIndex] = visage
-			},
-		},
-		{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			yOffset: 82,
-			image:   rotateIcon,
-			action: func(selectedIndex int) {
-				visage := g.visages[selectedIndex]
-				rotatedImage := ebiten.NewImage(visage.image.Bounds().Dy(), visage.image.Bounds().Dx())
-				op := &ebiten.DrawImageOptions{}
-
-				// Translate to origin, rotate, translate back
-				op.GeoM.Translate(-float64(visage.image.Bounds().Dx())/2, -float64(visage.image.Bounds().Dy())/2)
-				op.GeoM.Rotate(math.Pi / 2)
-				op.GeoM.Translate(float64(visage.image.Bounds().Dy())/2, float64(visage.image.Bounds().Dx())/2)
-
-				rotatedImage.DrawImage(visage.image, op)
-				visage.image = rotatedImage
-				visage.w = rotatedImage.Bounds().Dx()
-				visage.h = rotatedImage.Bounds().Dy()
-				g.visages[selectedIndex] = visage
-			},
-		},
-		{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			yOffset: 118,
-			image:   deleteIcon,
-			action: func(selectedIndex int) {
-				g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
-				g.selected = false
-				g.selectedIndex = 0
-				g.erasing = false
-			},
-		},
-		{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			yOffset: 154,
-			image:   copyIcon,
-			action: func(selectedIndex int) {
-				visage := g.visages[selectedIndex]
-				newImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
-				newImage.DrawImage(visage.image, nil)
-
-				newVisage := Visage{
-					x:     visage.x + 30,
-					y:     visage.y + 30,
-					w:     visage.w,
-					h:     visage.h,
-					image: newImage,
-				}
-				g.visages = append(g.visages, newVisage)
-				g.selectedIndex = len(g.visages) - 1
-			},
-		},
-		{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			yOffset: 190,
-			image:   eraseIcon,
-			action: func(selectedIndex int) {
-				g.erasing = !g.erasing
-				log.Println("Erasing: ", g.erasing)
-			},
-		},
+	keyActions = map[ebiten.Key]func(int){
+		ebiten.KeyE: g.buttons[0].action,
+		ebiten.KeyF: g.buttons[1].action,
+		ebiten.KeyR: g.buttons[2].action,
+		ebiten.KeyD: g.buttons[3].action,
+		ebiten.KeyC: g.buttons[4].action,
 	}
 
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
@@ -630,4 +500,99 @@ func main() {
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func loadAssets(g *Game) {
+	icons := []struct {
+		path   string
+		action func(selectedIndex int)
+	}{
+		{"assets/move.png", g.moveAction},
+		{"assets/flip.png", g.flipAction},
+		{"assets/rotate.png", g.rotateAction},
+		{"assets/delete.png", g.deleteAction},
+		{"assets/copy.png", g.copyAction},
+		{"assets/erase.png", g.eraseAction},
+	}
+
+	for i, icon := range icons {
+		img, _, err := ebitenutil.NewImageFromFile(icon.path)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		button := Button{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			yOffset: 10 + i*36,
+			image:   img,
+			action:  icon.action,
+		}
+		g.buttons = append(g.buttons, button)
+	}
+}
+
+func (g *Game) moveAction(selectedIndex int) {
+	visage := g.visages[selectedIndex]
+	if g.selectedIndex == len(g.visages)-1 {
+		g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
+		g.selectedIndex = 0
+	} else {
+		g.visages = append(g.visages[:g.selectedIndex], g.visages[g.selectedIndex+1:]...)
+		g.visages = append(g.visages, visage)
+		g.selectedIndex = len(g.visages) - 1
+	}
+}
+
+func (g *Game) flipAction(selectedIndex int) {
+	visage := g.visages[selectedIndex]
+	flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(-1, 1)
+	op.GeoM.Translate(float64(visage.image.Bounds().Dx()), 0)
+	flippedImage.DrawImage(visage.image, op)
+	visage.image = flippedImage
+	g.visages[selectedIndex] = visage
+}
+
+func (g *Game) rotateAction(selectedIndex int) {
+	visage := g.visages[selectedIndex]
+	rotatedImage := ebiten.NewImage(visage.image.Bounds().Dy(), visage.image.Bounds().Dx())
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(visage.image.Bounds().Dx())/2, -float64(visage.image.Bounds().Dy())/2)
+	op.GeoM.Rotate(math.Pi / 2)
+	op.GeoM.Translate(float64(visage.image.Bounds().Dy())/2, float64(visage.image.Bounds().Dx())/2)
+	rotatedImage.DrawImage(visage.image, op)
+	visage.image = rotatedImage
+	visage.w = rotatedImage.Bounds().Dx()
+	visage.h = rotatedImage.Bounds().Dy()
+	g.visages[selectedIndex] = visage
+}
+
+func (g *Game) deleteAction(selectedIndex int) {
+	g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
+	g.selected = false
+	g.selectedIndex = 0
+	g.erasing = false
+}
+
+func (g *Game) copyAction(selectedIndex int) {
+	visage := g.visages[selectedIndex]
+	newImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
+	newImage.DrawImage(visage.image, nil)
+	newVisage := Visage{
+		x:     visage.x + 30,
+		y:     visage.y + 30,
+		w:     visage.w,
+		h:     visage.h,
+		image: newImage,
+	}
+	g.visages = append(g.visages, newVisage)
+	g.selectedIndex = len(g.visages) - 1
+}
+
+func (g *Game) eraseAction(selectedIndex int) {
+	g.erasing = !g.erasing
+	log.Println("Erasing: ", g.erasing)
 }
