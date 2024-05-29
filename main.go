@@ -77,7 +77,8 @@ var (
 	colorEraser = color.RGBA{255, 32, 78, 200}
 )
 
-const debug = true
+const cursorDebug = false
+const actionDebug = true
 
 func (g *Game) handleErrors() error {
 	if err := func() error {
@@ -436,7 +437,7 @@ func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
 }
 
 func (g *Game) drawDebugInfo(screen *ebiten.Image) {
-	if debug {
+	if cursorDebug {
 		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
 		switch ebiten.CursorShape() {
 		case ebiten.CursorShapeDefault:
@@ -449,6 +450,24 @@ func (g *Game) drawDebugInfo(screen *ebiten.Image) {
 			ebitenutil.DebugPrint(screen, "Cursor: NWSE Resize")
 		case ebiten.CursorShapePointer:
 			ebitenutil.DebugPrint(screen, "Cursor: Pointer")
+		}
+	}
+
+	if actionDebug {
+		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
+		switch {
+		case g.dragging:
+			ebitenutil.DebugPrint(screen, "Action: Dragging")
+		case g.resizing:
+			ebitenutil.DebugPrint(screen, "Action: Resizing")
+		case g.panning:
+			ebitenutil.DebugPrint(screen, "Action: Panning")
+		case g.clicking:
+			ebitenutil.DebugPrint(screen, "Action: Clicking")
+		case g.erasing:
+			ebitenutil.DebugPrint(screen, "Action: Erasing")
+		default:
+			ebitenutil.DebugPrint(screen, "Action: None")
 		}
 	}
 }
@@ -571,10 +590,16 @@ func (g *Game) rotateAction(selectedIndex int) {
 }
 
 func (g *Game) deleteAction(selectedIndex int) {
-	g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
-	g.selected = false
-	g.selectedIndex = 0
-	g.erasing = false
+	g.resetActions()
+
+	if len(g.visages) <= 1 {
+		g.visages = nil
+		g.selected = false
+		g.selectedIndex = 0
+	} else {
+		g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
+		g.selectedIndex = len(g.visages) - 1
+	}
 }
 
 func (g *Game) copyAction(selectedIndex int) {
