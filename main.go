@@ -1,13 +1,16 @@
 package main
 
 import (
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io/fs"
 	"log"
 	"math"
 	"sync"
 
 	"image/color"
-	"image/png"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -113,9 +116,9 @@ func (g *Game) handleDroppedFiles() {
 					_ = f.Close()
 				}()
 
-				img, err := png.Decode(f)
+				img, _, err := image.Decode(f)
 				if err != nil {
-					log.Printf("Failed to decode the PNG file: %v", err)
+					log.Printf("Failed to decode the image file: %v", err)
 					return nil
 				}
 
