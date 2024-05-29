@@ -78,7 +78,7 @@ var (
 
 const debug = true
 
-func (g *Game) Update() error {
+func (g *Game) handleErrors() error {
 	if err := func() error {
 		g.m.Lock()
 		defer g.m.Unlock()
@@ -87,6 +87,10 @@ func (g *Game) Update() error {
 		return err
 	}
 
+	return nil
+}
+
+func (g *Game) handleDroppedFiles() {
 	if files := ebiten.DroppedFiles(); files != nil {
 		go func() {
 			if err := fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
@@ -118,8 +122,8 @@ func (g *Game) Update() error {
 
 				g.m.Lock()
 				newVisage := Visage{
-					x:     10,
-					y:     10,
+					x:     40,
+					y:     40,
 					w:     eimg.Bounds().Dx(),
 					h:     eimg.Bounds().Dy(),
 					image: eimg,
@@ -137,8 +141,9 @@ func (g *Game) Update() error {
 			}
 		}()
 	}
+}
 
-	x, y := ebiten.CursorPosition()
+func (g *Game) handleCursor(x, y int) {
 	cursor := ebiten.CursorShapeDefault
 
 	if g.selected {
@@ -159,55 +164,9 @@ func (g *Game) Update() error {
 		} else if x >= v.x+v.w-handleArea && x <= v.x+v.w+handleArea && y >= v.y+v.h-handleArea && y <= v.y+v.h+handleArea {
 			cursor = ebiten.CursorShapeNWSEResize
 		}
-
-		// Keybinds
-		if ebiten.IsKeyPressed(ebiten.KeyE) {
-			if !pressedKeys[ebiten.KeyE] {
-				g.buttons[0].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyE] = true
-		} else {
-			pressedKeys[ebiten.KeyE] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyF) {
-			if !pressedKeys[ebiten.KeyF] {
-				g.buttons[1].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyF] = true
-		} else {
-			pressedKeys[ebiten.KeyF] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyR) {
-			if !pressedKeys[ebiten.KeyR] {
-				g.buttons[2].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyR] = true
-		} else {
-			pressedKeys[ebiten.KeyR] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyD) {
-			if !pressedKeys[ebiten.KeyD] {
-				g.buttons[3].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyD] = true
-		} else {
-			pressedKeys[ebiten.KeyD] = false
-		}
-
-		if ebiten.IsKeyPressed(ebiten.KeyC) {
-			if !pressedKeys[ebiten.KeyC] {
-				g.buttons[4].action(g.selectedIndex)
-			}
-			pressedKeys[ebiten.KeyC] = true
-		} else {
-			pressedKeys[ebiten.KeyC] = false
-		}
 	}
 
-	if g.dragging || g.panning { // Drag or Pan Cursor
+	if g.dragging || g.panning {
 		cursor = ebiten.CursorShapeMove
 	}
 
@@ -215,165 +174,221 @@ func (g *Game) Update() error {
 		cursor = ebiten.CursorShapeCrosshair
 	}
 
-	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
-		if !g.dragging && !g.resizing {
-			if g.selected { // Check for resize and button clicks on selected visage
-				v := g.visages[g.selectedIndex]
-				imgX := v.x
-				imgY := v.y
-				imgW := v.w
-				imgH := v.h
-
-				if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
-					g.resizing = true
-					g.resizeHandle = handleTopLeft
-				} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY-handleArea && y <= imgY+handleArea {
-					g.resizing = true
-					g.resizeHandle = handleTopRight
-				} else if x >= imgX-handleArea && x <= imgX+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
-					g.resizing = true
-					g.resizeHandle = handleBottomLeft
-				} else if x >= imgX+imgW-handleArea && x <= imgX+imgW+handleArea && y >= imgY+imgH-handleArea && y <= imgY+imgH+handleArea {
-					g.resizing = true
-					g.resizeHandle = handleBottomRight
-				}
-
-				if !g.clicking { // Handle button clicks
-					for _, button := range g.buttons {
-						if x >= imgX+button.xOffset && x <= imgX+button.xOffset+buttonSize && y >= imgY+button.yOffset && y <= imgY+button.yOffset+buttonSize {
-							button.action(g.selectedIndex)
-							g.clicking = true // Prevent double click
-						}
-					}
-				}
-
-				if g.erasing {
-					v := &g.visages[g.selectedIndex]
-
-					sliderMouseOffset := 14
-					// Slider dragging
-					if x >= v.x+(v.w/2)-(sliderWidth/2)-sliderMouseOffset && x <= v.x+(v.w/2)-(sliderWidth/2)+sliderWidth+sliderMouseOffset && y >= v.y+v.h+sliderYOffset-sliderMouseOffset && y <= v.y+v.h+sliderYOffset+sliderHeight+sliderMouseOffset {
-						g.sliderDragging = true
-						g.sliderValue = x - (v.x + (v.w / 2) - (sliderWidth / 2))
-						if g.sliderValue < sliderMin {
-							g.sliderValue = sliderMin
-						} else if g.sliderValue > sliderMax {
-							g.sliderValue = sliderMax
-						}
-					}
-
-					// Erase pixels
-					px := int(float64(x-v.x) * (float64(v.image.Bounds().Dx()) / float64(v.w)))
-					py := int(float64(y-v.y) * (float64(v.image.Bounds().Dy()) / float64(v.h)))
-
-					w, h := v.image.Bounds().Dx(), v.image.Bounds().Dy()
-
-					radiusSquared := g.sliderValue * g.sliderValue
-
-					for dx := -g.sliderValue; dx <= g.sliderValue; dx++ {
-						for dy := -g.sliderValue; dy <= g.sliderValue; dy++ {
-							if dx*dx+dy*dy <= radiusSquared {
-								ex := px + dx
-								ey := py + dy
-								if ex >= 0 && ey >= 0 && ex < w && ey < h {
-									v.image.Set(ex, ey, color.RGBA{0, 0, 0, 0})
-								}
-							}
-						}
-					}
-				}
-			}
-
-			if !g.resizing && !g.clicking && !g.erasing { // Check for drag after resize, click, or erase to prevent overlap reselection
-				for i := len(g.visages) - 1; i >= 0; i-- {
-					v := g.visages[i]
-					imgX := v.x
-					imgY := v.y
-					imgW := v.w
-					imgH := v.h
-
-					if x >= imgX && x <= imgX+imgW && y >= imgY && y <= imgY+imgH {
-						g.dragging = true
-						g.selected = true
-						g.selectedIndex = i
-						g.dragOffsetX = x - imgX
-						g.dragOffsetY = y - imgY
-						break
-					}
-				}
-
-				if !g.dragging { // Deselect if no visage is dragged (click outside)
-					g.selected = false
-				}
-			}
-		} else if g.dragging {
-			v := &g.visages[g.selectedIndex]
-			v.x = x - g.dragOffsetX
-			v.y = y - g.dragOffsetY
-		} else if g.resizing {
-			v := &g.visages[g.selectedIndex]
-
-			switch g.resizeHandle {
-			case handleTopLeft:
-				v.w += v.x - x
-				v.h += v.y - y
-				v.x = x
-				v.y = y
-			case handleTopRight:
-				v.w = x - v.x
-				v.h += v.y - y
-				v.y = y
-			case handleBottomLeft:
-				v.w += v.x - x
-				v.h = y - v.y
-				v.x = x
-			case handleBottomRight:
-				v.w = x - v.x
-				v.h = y - v.y
-			}
-
-			// Prevent negative width and height
-			if v.w < 1 {
-				v.w = 1
-			}
-			if v.h < 1 {
-				v.h = 1
-			}
-		}
-	} else {
-		g.dragging = false
-		g.resizing = false
-		g.clicking = false
-		g.sliderDragging = false
-		g.resizeHandle = handleNone
-	}
-
-	// Handle panning
-	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
-		if !g.panning {
-			g.panStartX = x
-			g.panStartY = y
-			g.panning = true
-		} else {
-			dx := x - g.panStartX
-			dy := y - g.panStartY
-
-			for i := range g.visages {
-				g.visages[i].x += dx
-				g.visages[i].y += dy
-			}
-
-			g.panStartX = x
-			g.panStartY = y
-		}
-	} else {
-		g.panning = false
-	}
-
-	if g.cursor != cursor { // Only set cursor if it has changed
+	if g.cursor != cursor {
 		ebiten.SetCursorShape(cursor)
 		g.cursor = cursor
 	}
+}
+
+func (g *Game) handleKeybinds() {
+	keyActions := map[ebiten.Key]func(int){
+		ebiten.KeyE: g.buttons[0].action,
+		ebiten.KeyF: g.buttons[1].action,
+		ebiten.KeyR: g.buttons[2].action,
+		ebiten.KeyD: g.buttons[3].action,
+		ebiten.KeyC: g.buttons[4].action,
+	}
+
+	for key, action := range keyActions {
+		if ebiten.IsKeyPressed(key) {
+			if !pressedKeys[key] {
+				action(g.selectedIndex)
+			}
+			pressedKeys[key] = true
+		} else {
+			pressedKeys[key] = false
+		}
+	}
+}
+
+func (g *Game) handleMouseActions(x, y int) {
+	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
+		g.handleLeftMouseButton(x, y)
+	} else if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
+		g.handlePanning(x, y)
+	} else {
+		g.resetActions()
+	}
+}
+
+func (g *Game) checkResizeHandles(x, y int) {
+	v := g.visages[g.selectedIndex]
+	if x >= v.x-handleArea && x <= v.x+handleArea && y >= v.y-handleArea && y <= v.y+handleArea {
+		g.resizing = true
+		g.resizeHandle = handleTopLeft
+	} else if x >= v.x+v.w-handleArea && x <= v.x+v.w+handleArea && y >= v.y-handleArea && y <= v.y+handleArea {
+		g.resizing = true
+		g.resizeHandle = handleTopRight
+	} else if x >= v.x-handleArea && x <= v.x+handleArea && y >= v.y+v.h-handleArea && y <= v.y+v.h+handleArea {
+		g.resizing = true
+		g.resizeHandle = handleBottomLeft
+	} else if x >= v.x+v.w-handleArea && x <= v.x+v.w+handleArea && y >= v.y+v.h-handleArea && y <= v.y+v.h+handleArea {
+		g.resizing = true
+		g.resizeHandle = handleBottomRight
+	}
+}
+
+func (g *Game) getPixelCoordinates(v *Visage, x, y int) (int, int) {
+	return int(float64(x-v.x) * (float64(v.image.Bounds().Dx()) / float64(v.w))), int(float64(y-v.y) * (float64(v.image.Bounds().Dy()) / float64(v.h)))
+}
+
+func (g *Game) erasePixels(v *Visage, px, py int) {
+	w, h := v.image.Bounds().Dx(), v.image.Bounds().Dy()
+	radiusSquared := g.sliderValue * g.sliderValue
+
+	for dx := -g.sliderValue; dx <= g.sliderValue; dx++ {
+		for dy := -g.sliderValue; dy <= g.sliderValue; dy++ {
+			if dx*dx+dy*dy <= radiusSquared {
+				ex := px + dx
+				ey := py + dy
+				if ex >= 0 && ey >= 0 && ex < w && ey < h {
+					v.image.Set(ex, ey, color.RGBA{0, 0, 0, 0})
+				}
+			}
+		}
+	}
+}
+
+func (g *Game) updateSliderValue(value int) {
+	g.sliderValue = value
+	if g.sliderValue < sliderMin {
+		g.sliderValue = sliderMin
+	} else if g.sliderValue > sliderMax {
+		g.sliderValue = sliderMax
+	}
+}
+
+func (g *Game) handleErasing(x, y int) {
+	v := &g.visages[g.selectedIndex]
+	sliderMouseOffset := 14
+	if x >= v.x+(v.w/2)-(sliderWidth/2)-sliderMouseOffset && x <= v.x+(v.w/2)-(sliderWidth/2)+sliderWidth+sliderMouseOffset && y >= v.y+v.h+sliderYOffset-sliderMouseOffset && y <= v.y+v.h+sliderYOffset+sliderHeight+sliderMouseOffset {
+		g.sliderDragging = true
+		g.updateSliderValue(x - (v.x + (v.w / 2) - (sliderWidth / 2)))
+	}
+
+	px, py := g.getPixelCoordinates(v, x, y)
+	g.erasePixels(v, px, py)
+}
+
+func (g *Game) checkButtonClicks(x, y int) {
+	v := g.visages[g.selectedIndex]
+	for _, button := range g.buttons {
+		if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
+			button.action(g.selectedIndex)
+			g.clicking = true
+		}
+	}
+}
+
+func (g *Game) handleLeftMouseButton(x, y int) {
+	if !g.dragging && !g.resizing {
+		if g.selected {
+			g.checkResizeHandles(x, y)
+			if !g.clicking {
+				g.checkButtonClicks(x, y)
+			}
+			if g.erasing {
+				g.handleErasing(x, y)
+			}
+		}
+
+		if !g.resizing && !g.clicking && !g.erasing {
+			g.checkVisageDrag(x, y)
+		}
+	} else if g.dragging {
+		g.dragSelectedVisage(x, y)
+	} else if g.resizing {
+		g.resizeSelectedVisage(x, y)
+	}
+}
+
+func (g *Game) checkVisageDrag(x, y int) {
+	for i := len(g.visages) - 1; i >= 0; i-- {
+		v := g.visages[i]
+		if x >= v.x && x <= v.x+v.w && y >= v.y && y <= v.y+v.h {
+			g.dragging = true
+			g.selected = true
+			g.selectedIndex = i
+			g.dragOffsetX = x - v.x
+			g.dragOffsetY = y - v.y
+			break
+		}
+	}
+
+	if !g.dragging {
+		g.selected = false
+	}
+}
+
+func (g *Game) dragSelectedVisage(x, y int) {
+	v := &g.visages[g.selectedIndex]
+	v.x = x - g.dragOffsetX
+	v.y = y - g.dragOffsetY
+}
+
+func (g *Game) resizeSelectedVisage(x, y int) {
+	v := &g.visages[g.selectedIndex]
+	switch g.resizeHandle {
+	case handleTopLeft:
+		v.w += v.x - x
+		v.h += v.y - y
+		v.x = x
+		v.y = y
+	case handleTopRight:
+		v.w = x - v.x
+		v.h += v.y - y
+		v.y = y
+	case handleBottomLeft:
+		v.w += v.x - x
+		v.h = y - v.y
+		v.x = x
+	case handleBottomRight:
+		v.w = x - v.x
+		v.h = y - v.y
+	}
+	if v.w < 1 {
+		v.w = 1
+	}
+	if v.h < 1 {
+		v.h = 1
+	}
+}
+
+func (g *Game) resetActions() {
+	g.dragging = false
+	g.resizing = false
+	g.clicking = false
+	g.panning = false
+	g.sliderDragging = false
+	g.resizeHandle = handleNone
+}
+
+func (g *Game) handlePanning(x, y int) {
+	if !g.panning {
+		g.panStartX = x
+		g.panStartY = y
+		g.panning = true
+	} else {
+		dx := x - g.panStartX
+		dy := y - g.panStartY
+		for i := range g.visages {
+			g.visages[i].x += dx
+			g.visages[i].y += dy
+		}
+		g.panStartX = x
+		g.panStartY = y
+	}
+}
+
+func (g *Game) Update() error {
+
+	g.handleErrors()
+	g.handleDroppedFiles()
+	g.handleKeybinds()
+
+	x, y := ebiten.CursorPosition()
+	g.handleMouseActions(x, y)
+	g.handleCursor(x, y)
 
 	return nil
 }
