@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -80,7 +81,8 @@ var (
 )
 
 const cursorDebug = false
-const actionDebug = true
+const actionDebug = false
+const fpsDebug = true
 
 func (g *Game) handleErrors() error {
 	if err := func() error {
@@ -524,6 +526,12 @@ func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
 }
 
 func (g *Game) drawDebugInfo(screen *ebiten.Image) {
+	if fpsDebug {
+		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
+		ebitenutil.DebugPrint(screen, "TPS: "+fmt.Sprintf("%.2f", ebiten.ActualTPS()))
+		// ebitenutil.DebugPrint(screen, "FPS: "+fmt.Sprintf("%.2f", ebiten.ActualFPS()))
+	}
+
 	if cursorDebug {
 		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
 		switch ebiten.CursorShape() {
