@@ -151,10 +151,22 @@ func (g *Game) handleCursor(x, y int) {
 	if g.selected {
 		v := g.visages[g.selectedIndex]
 
-		for _, button := range g.buttons { // Button Hover Cursor
+		if g.erasing {
+			cursor = ebiten.CursorShapeCrosshair
+		}
+
+		for i, button := range g.buttons { // Button Hover Cursor
 			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
-				cursor = ebiten.CursorShapePointer
+				if g.erasing && i != 5 { // All buttons except eraser are disabled when erasing
+					cursor = ebiten.CursorShapeNotAllowed
+				} else {
+					cursor = ebiten.CursorShapePointer
+				}
 			}
+		}
+
+		if g.dragging {
+			cursor = ebiten.CursorShapeMove
 		}
 
 		if x >= v.x-handleArea && x <= v.x+handleArea && y >= v.y-handleArea && y <= v.y+handleArea {
@@ -168,13 +180,17 @@ func (g *Game) handleCursor(x, y int) {
 		}
 	}
 
-	if g.dragging || g.panning {
+	// if g.dragging || g.panning {
+	// 	cursor = ebiten.CursorShapeMove
+	// }
+
+	if g.panning {
 		cursor = ebiten.CursorShapeMove
 	}
 
-	if g.erasing {
-		cursor = ebiten.CursorShapeCrosshair
-	}
+	// if g.erasing {
+	// 	cursor = ebiten.CursorShapeCrosshair
+	// }
 
 	if g.cursor != cursor {
 		ebiten.SetCursorShape(cursor)
@@ -201,7 +217,7 @@ func (g *Game) handleMouseActions(x, y int) {
 	} else if ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight) {
 		g.handlePanning(x, y)
 	} else {
-		g.resetActions()
+		g.handleMouseRelease()
 	}
 }
 
@@ -253,11 +269,22 @@ func (g *Game) updateSliderValue(value int) {
 }
 
 func (g *Game) handleErasing(x, y int) {
+	if g.clicking { // Prevents erasing when clicking on buttons
+		return
+	}
+
 	v := &g.visages[g.selectedIndex]
+
+	// Slider dragging
 	sliderMouseOffset := 14
 	if x >= v.x+(v.w/2)-(sliderWidth/2)-sliderMouseOffset && x <= v.x+(v.w/2)-(sliderWidth/2)+sliderWidth+sliderMouseOffset && y >= v.y+v.h+sliderYOffset-sliderMouseOffset && y <= v.y+v.h+sliderYOffset+sliderHeight+sliderMouseOffset {
 		g.sliderDragging = true
 		g.updateSliderValue(x - (v.x + (v.w / 2) - (sliderWidth / 2)))
+	}
+
+	// Check if outofbounds
+	if x < v.x || x > v.x+v.w || y < v.y || y > v.y+v.h+sliderYOffset {
+		return
 	}
 
 	px, py := g.getPixelCoordinates(v, x, y)
@@ -266,7 +293,11 @@ func (g *Game) handleErasing(x, y int) {
 
 func (g *Game) checkButtonClicks(x, y int) {
 	v := g.visages[g.selectedIndex]
-	for _, button := range g.buttons {
+	for i, button := range g.buttons {
+		if g.erasing && i != 5 { // Prevent clicking on buttons when erasing
+			continue
+		}
+
 		if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
 			button.action(g.selectedIndex)
 			g.clicking = true
@@ -310,6 +341,7 @@ func (g *Game) checkVisageDrag(x, y int) {
 	}
 
 	if !g.dragging {
+		log.Println("No visage selected")
 		g.selected = false
 	}
 }
@@ -348,11 +380,22 @@ func (g *Game) resizeSelectedVisage(x, y int) {
 	}
 }
 
+func (g *Game) handleMouseRelease() {
+	g.dragging = false
+	g.resizing = false
+	g.clicking = false
+	g.panning = false
+	g.sliderDragging = false
+	g.resizeHandle = handleNone
+}
+
 func (g *Game) resetActions() {
 	g.dragging = false
 	g.resizing = false
 	g.clicking = false
 	g.panning = false
+	g.erasing = false
+	g.selected = false
 	g.sliderDragging = false
 	g.resizeHandle = handleNone
 }
@@ -594,11 +637,8 @@ func (g *Game) deleteAction(selectedIndex int) {
 
 	if len(g.visages) <= 1 {
 		g.visages = nil
-		g.selected = false
-		g.selectedIndex = 0
 	} else {
 		g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
-		g.selectedIndex = len(g.visages) - 1
 	}
 }
 
