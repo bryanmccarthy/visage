@@ -23,7 +23,6 @@ type Visage struct {
 type Button struct {
 	w, h    int
 	xOffset int
-	yOffset int
 	image   *ebiten.Image
 	action  func(selectedIndex int)
 }
@@ -151,12 +150,16 @@ func (g *Game) handleCursor(x, y int) {
 	if g.selected {
 		v := g.visages[g.selectedIndex]
 
+		totalButtonsHeight := buttonSize * len(g.buttons)
+		initialYOffset := (v.h - totalButtonsHeight) / 2
+
 		if g.erasing {
 			cursor = ebiten.CursorShapeCrosshair
 		}
 
 		for i, button := range g.buttons { // Button Hover Cursor
-			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
+			yOffset := v.y + initialYOffset + (buttonSize * i)
+			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= yOffset && y <= yOffset+buttonSize {
 				if g.erasing && !containsIndex([]int{1, 2, 3}, i) {
 					cursor = ebiten.CursorShapeNotAllowed
 				} else {
@@ -309,12 +312,17 @@ func containsIndex(arr []int, val int) bool {
 
 func (g *Game) checkButtonClicks(x, y int) {
 	v := g.visages[g.selectedIndex]
+
+	totalButtonsHeight := buttonSize * len(g.buttons)
+	initialYOffset := (v.h - totalButtonsHeight) / 2
+
 	for i, button := range g.buttons {
+		yOffset := v.y + initialYOffset + (buttonSize * i)
 		if g.erasing && !containsIndex([]int{1, 2, 3}, i) {
 			continue
 		}
 
-		if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= v.y+button.yOffset && y <= v.y+button.yOffset+buttonSize {
+		if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= yOffset && y <= yOffset+buttonSize {
 			button.action(g.selectedIndex)
 			g.clicking = true
 		}
@@ -484,16 +492,22 @@ func (g *Game) drawResizeHandles(screen *ebiten.Image, v Visage) {
 }
 
 func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
+	totalButtonsHeight := buttonSize * len(g.buttons)
+	initialYOffset := (v.h - totalButtonsHeight) / 2
+
 	for i, button := range g.buttons {
-		vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
+		yOffset := v.y + initialYOffset + (buttonSize * i)
+
+		vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
+
 		if g.erasing && containsIndex([]int{1, 2, 3}, i) {
-			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(v.y+button.yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
+			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
 		}
 
 		op := &ebiten.DrawImageOptions{}
 		op.Filter = ebiten.FilterLinear
 		op.GeoM.Scale(float64(button.w)/float64(button.image.Bounds().Dx()), float64(button.h)/float64(button.image.Bounds().Dy()))
-		op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(v.y+button.yOffset+2))
+		op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(yOffset+2))
 		screen.DrawImage(button.image, op)
 	}
 }
@@ -577,11 +591,12 @@ func main() {
 	loadAssets(g)
 
 	keyActions = map[ebiten.Key]func(int){
-		ebiten.KeyE: g.buttons[0].action,
+		ebiten.KeyW: g.buttons[0].action,
 		ebiten.KeyF: g.buttons[1].action,
 		ebiten.KeyR: g.buttons[2].action,
-		ebiten.KeyD: g.buttons[3].action,
-		ebiten.KeyC: g.buttons[4].action,
+		ebiten.KeyE: g.buttons[3].action,
+		ebiten.KeyD: g.buttons[4].action,
+		ebiten.KeyC: g.buttons[5].action,
 	}
 
 	ebiten.SetWindowResizingMode(ebiten.WindowResizingModeEnabled)
@@ -604,7 +619,7 @@ func loadAssets(g *Game) {
 		{"assets/copy.png", g.copyAction},
 	}
 
-	for i, icon := range icons {
+	for _, icon := range icons {
 		img, _, err := ebitenutil.NewImageFromFile(icon.path)
 		if err != nil {
 			log.Fatal(err)
@@ -614,7 +629,6 @@ func loadAssets(g *Game) {
 			w:       26,
 			h:       26,
 			xOffset: -36,
-			yOffset: 10 + i*36,
 			image:   img,
 			action:  icon.action,
 		}
