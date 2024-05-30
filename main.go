@@ -15,6 +15,7 @@ import (
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -37,6 +38,7 @@ type Game struct {
 	err            error
 	m              sync.Mutex
 	cursor         ebiten.CursorShapeType
+	touchIds       [16]ebiten.TouchID
 	selected       bool
 	selectedIndex  int
 	dragging       bool
@@ -242,11 +244,11 @@ func (g *Game) checkResizeHandles(x, y int) {
 	}
 }
 
-func (g *Game) getPixelCoordinates(v *Visage, x, y int) (int, int) {
+func getPixelCoordinates(v *Visage, x, y int) (int, int) { // Needed for erasing resized images
 	return int(float64(x-v.x) * (float64(v.image.Bounds().Dx()) / float64(v.w))), int(float64(y-v.y) * (float64(v.image.Bounds().Dy()) / float64(v.h)))
 }
 
-func (g *Game) erasePixels(v *Visage, px, py int) {
+func (g *Game) erasePixels(v *Visage, px, py int) { // Slow
 	w, h := v.image.Bounds().Dx(), v.image.Bounds().Dy()
 	radiusSquared := g.sliderValue * g.sliderValue
 
@@ -302,7 +304,7 @@ func (g *Game) handleErasing(x, y int) {
 		return
 	}
 
-	px, py := g.getPixelCoordinates(v, x, y)
+	px, py := getPixelCoordinates(v, x, y)
 	g.erasePixels(v, px, py)
 }
 
@@ -527,9 +529,8 @@ func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
 
 func (g *Game) drawDebugInfo(screen *ebiten.Image) {
 	if fpsDebug {
-		vector.DrawFilledRect(screen, 0, 0, 120, 20, color.RGBA{100, 100, 100, 200}, false)
-		ebitenutil.DebugPrint(screen, "TPS: "+fmt.Sprintf("%.2f", ebiten.ActualTPS()))
-		// ebitenutil.DebugPrint(screen, "FPS: "+fmt.Sprintf("%.2f", ebiten.ActualFPS()))
+		vector.DrawFilledRect(screen, 0, 0, 140, 20, color.RGBA{100, 100, 100, 200}, false)
+		ebitenutil.DebugPrint(screen, "TPS: "+fmt.Sprintf("%.2f", ebiten.ActualTPS())+" FPS: "+fmt.Sprintf("%.2f", ebiten.ActualFPS()))
 	}
 
 	if cursorDebug {
@@ -567,7 +568,127 @@ func (g *Game) drawDebugInfo(screen *ebiten.Image) {
 	}
 }
 
+func (g *Game) moveAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected || g.erasing {
+		return
+	}
+
+	visage := g.visages[selectedIndex]
+	if g.selectedIndex == len(g.visages)-1 {
+		g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
+		g.selectedIndex = 0
+	} else {
+		g.visages = append(g.visages[:g.selectedIndex], g.visages[g.selectedIndex+1:]...)
+		g.visages = append(g.visages, visage)
+		g.selectedIndex = len(g.visages) - 1
+	}
+}
+
+func (g *Game) flipAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected {
+		return
+	}
+
+	visage := &g.visages[selectedIndex]
+	flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(-1, 1)
+	op.GeoM.Translate(float64(visage.image.Bounds().Dx()), 0)
+	flippedImage.DrawImage(visage.image, op)
+	visage.image = flippedImage
+}
+
+func (g *Game) rotateAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected {
+		return
+	}
+
+	visage := &g.visages[selectedIndex]
+	rotatedImage := ebiten.NewImage(visage.image.Bounds().Dy(), visage.image.Bounds().Dx())
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(-float64(visage.image.Bounds().Dx())/2, -float64(visage.image.Bounds().Dy())/2)
+	op.GeoM.Rotate(math.Pi / 2)
+	op.GeoM.Translate(float64(visage.image.Bounds().Dy())/2, float64(visage.image.Bounds().Dx())/2)
+	rotatedImage.DrawImage(visage.image, op)
+	visage.image = rotatedImage
+	visage.w = rotatedImage.Bounds().Dx()
+	visage.h = rotatedImage.Bounds().Dy()
+}
+
+func (g *Game) deleteAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected || g.erasing {
+		return
+	}
+
+	if len(g.visages) <= 1 {
+		g.visages = nil
+		g.selected = false
+	} else {
+		g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
+		g.selected = true
+		g.selectedIndex = len(g.visages) - 1
+	}
+}
+
+func (g *Game) copyAction(selectedIndex int) {
+	if len(g.visages) == 0 || !g.selected || g.erasing {
+		return
+	}
+
+	visage := g.visages[selectedIndex]
+	newImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
+	newImage.DrawImage(visage.image, nil)
+	newVisage := Visage{
+		x:     visage.x + 30,
+		y:     visage.y + 30,
+		w:     visage.w,
+		h:     visage.h,
+		image: newImage,
+	}
+	g.visages = append(g.visages, newVisage)
+	g.selectedIndex = len(g.visages) - 1
+}
+
+func (g *Game) eraseAction(selectedIndex int) {
+	g.erasing = !g.erasing
+	log.Println("Erasing: ", g.erasing)
+}
+
+func loadAssets(g *Game) {
+	icons := []struct {
+		path   string
+		action func(selectedIndex int)
+	}{
+		{"assets/move.png", g.moveAction},
+		{"assets/flip.png", g.flipAction},
+		{"assets/rotate.png", g.rotateAction},
+		{"assets/erase.png", g.eraseAction},
+		{"assets/delete.png", g.deleteAction},
+		{"assets/copy.png", g.copyAction},
+	}
+
+	for _, icon := range icons {
+		img, _, err := ebitenutil.NewImageFromFile(icon.path)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		button := Button{
+			w:       26,
+			h:       26,
+			xOffset: -36,
+			image:   img,
+			action:  icon.action,
+		}
+		g.buttons = append(g.buttons, button)
+	}
+}
+
 func (g *Game) Update() error {
+	touchIDs := inpututil.AppendJustPressedTouchIDs(g.touchIds[:0])
+	if len(touchIDs) > 0 {
+		log.Printf("TouchIDs: %v", touchIDs)
+	}
 
 	g.handleErrors()
 	g.handleDroppedFiles()
@@ -615,121 +736,4 @@ func main() {
 	if err := ebiten.RunGame(g); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func loadAssets(g *Game) {
-	icons := []struct {
-		path   string
-		action func(selectedIndex int)
-	}{
-		{"assets/move.png", g.moveAction},
-		{"assets/flip.png", g.flipAction},
-		{"assets/rotate.png", g.rotateAction},
-		{"assets/erase.png", g.eraseAction},
-		{"assets/delete.png", g.deleteAction},
-		{"assets/copy.png", g.copyAction},
-	}
-
-	for _, icon := range icons {
-		img, _, err := ebitenutil.NewImageFromFile(icon.path)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		button := Button{
-			w:       26,
-			h:       26,
-			xOffset: -36,
-			image:   img,
-			action:  icon.action,
-		}
-		g.buttons = append(g.buttons, button)
-	}
-}
-
-func (g *Game) moveAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected || g.erasing {
-		return
-	}
-
-	visage := g.visages[selectedIndex]
-	if g.selectedIndex == len(g.visages)-1 {
-		g.visages = append([]Visage{visage}, g.visages[:g.selectedIndex]...)
-		g.selectedIndex = 0
-	} else {
-		g.visages = append(g.visages[:g.selectedIndex], g.visages[g.selectedIndex+1:]...)
-		g.visages = append(g.visages, visage)
-		g.selectedIndex = len(g.visages) - 1
-	}
-}
-
-func (g *Game) flipAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected {
-		return
-	}
-
-	visage := &g.visages[selectedIndex]
-	flippedImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(-1, 1)
-	op.GeoM.Translate(float64(visage.image.Bounds().Dx()), 0)
-	flippedImage.DrawImage(visage.image, op)
-	visage.image = flippedImage
-}
-
-func (g *Game) rotateAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected {
-		return
-	}
-
-	visage := g.visages[selectedIndex]
-	rotatedImage := ebiten.NewImage(visage.image.Bounds().Dy(), visage.image.Bounds().Dx())
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(-float64(visage.image.Bounds().Dx())/2, -float64(visage.image.Bounds().Dy())/2)
-	op.GeoM.Rotate(math.Pi / 2)
-	op.GeoM.Translate(float64(visage.image.Bounds().Dy())/2, float64(visage.image.Bounds().Dx())/2)
-	rotatedImage.DrawImage(visage.image, op)
-	visage.image = rotatedImage
-	visage.w = rotatedImage.Bounds().Dx()
-	visage.h = rotatedImage.Bounds().Dy()
-	g.visages[selectedIndex] = visage
-}
-
-func (g *Game) deleteAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected || g.erasing {
-		return
-	}
-
-	if len(g.visages) <= 1 {
-		g.visages = nil
-		g.selected = false
-	} else {
-		g.visages = append(g.visages[:selectedIndex], g.visages[selectedIndex+1:]...)
-		g.selected = true
-		g.selectedIndex = len(g.visages) - 1
-	}
-}
-
-func (g *Game) copyAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected || g.erasing {
-		return
-	}
-
-	visage := g.visages[selectedIndex]
-	newImage := ebiten.NewImage(visage.image.Bounds().Dx(), visage.image.Bounds().Dy())
-	newImage.DrawImage(visage.image, nil)
-	newVisage := Visage{
-		x:     visage.x + 30,
-		y:     visage.y + 30,
-		w:     visage.w,
-		h:     visage.h,
-		image: newImage,
-	}
-	g.visages = append(g.visages, newVisage)
-	g.selectedIndex = len(g.visages) - 1
-}
-
-func (g *Game) eraseAction(selectedIndex int) {
-	g.erasing = !g.erasing
-	log.Println("Erasing: ", g.erasing)
 }
