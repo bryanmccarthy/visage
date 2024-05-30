@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"image"
+	"image/color"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
@@ -11,11 +12,8 @@ import (
 	"math"
 	"sync"
 
-	"image/color"
-
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
@@ -38,7 +36,8 @@ type Game struct {
 	err            error
 	m              sync.Mutex
 	cursor         ebiten.CursorShapeType
-	touchIds       [16]ebiten.TouchID
+	prevMouseX     int
+	prevMouseY     int
 	selected       bool
 	selectedIndex  int
 	dragging       bool
@@ -50,7 +49,7 @@ type Game struct {
 	panStartX      int
 	panStartY      int
 	clicking       bool
-	erasing        bool
+	erasingToggle  bool
 	sliderDragging bool
 	sliderValue    int
 }
@@ -160,14 +159,14 @@ func (g *Game) handleCursor(x, y int) {
 		totalButtonsHeight := buttonSize * len(g.buttons)
 		initialYOffset := (v.h - totalButtonsHeight) / 2
 
-		if g.erasing {
+		if g.erasingToggle {
 			cursor = ebiten.CursorShapeCrosshair
 		}
 
 		for i, button := range g.buttons { // Button Hover Cursor
 			yOffset := v.y + initialYOffset + (buttonSize * i)
 			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= yOffset && y <= yOffset+buttonSize {
-				if g.erasing && !containsIndex([]int{1, 2, 3}, i) {
+				if g.erasingToggle && !containsIndex([]int{1, 2, 3}, i) {
 					cursor = ebiten.CursorShapeNotAllowed
 				} else {
 					cursor = ebiten.CursorShapePointer
@@ -248,20 +247,89 @@ func getPixelCoordinates(v *Visage, x, y int) (int, int) { // Needed for erasing
 	return int(float64(x-v.x) * (float64(v.image.Bounds().Dx()) / float64(v.w))), int(float64(y-v.y) * (float64(v.image.Bounds().Dy()) / float64(v.h)))
 }
 
-func (g *Game) erasePixels(v *Visage, px, py int) { // Slow
-	w, h := v.image.Bounds().Dx(), v.image.Bounds().Dy()
-	radiusSquared := g.sliderValue * g.sliderValue
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
 
-	for dx := -g.sliderValue; dx <= g.sliderValue; dx++ {
-		for dy := -g.sliderValue; dy <= g.sliderValue; dy++ {
-			if dx*dx+dy*dy <= radiusSquared {
-				ex := px + dx
-				ey := py + dy
-				if ex >= 0 && ey >= 0 && ex < w && ey < h {
-					v.image.Set(ex, ey, color.RGBA{0, 0, 0, 0})
-				}
+// Bresenham's line algorithm with thickness
+func drawLine(img *ebiten.Image, x0, y0, x1, y1, thickness int, col color.Color) {
+	dx := abs(x1 - x0)
+	dy := abs(y1 - y0)
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	sy := -1
+	if y0 < y1 {
+		sy = 1
+	}
+	err := dx - dy
+
+	// TODO: Fix this
+	drawCircle(img, x0, y0, thickness/2, color.RGBA{0, 0, 0, 0})
+
+	for {
+		for t := -thickness / 2; t <= thickness/2; t++ {
+			if dx > dy {
+				setPixel(img, x0, y0+t, col)
+			} else {
+				setPixel(img, x0+t, y0, col)
 			}
 		}
+
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x0 += sx
+		}
+		if e2 < dx {
+			err += dx
+			y0 += sy
+		}
+	}
+
+	// TODO: Fix this
+	drawCircle(img, x1, y1, thickness/2, color.RGBA{0, 0, 0, 0})
+}
+
+// Bresenham's circle algorithm
+func drawCircle(img *ebiten.Image, x0, y0, radius int, col color.Color) {
+	x := radius
+	y := 0
+	err := 1 - x
+
+	for x >= y {
+		drawHorizontalLine(img, x0-y, x0+y, y0+x, col)
+		drawHorizontalLine(img, x0-y, x0+y, y0-x, col)
+		drawHorizontalLine(img, x0-x, x0+x, y0+y, col)
+		drawHorizontalLine(img, x0-x, x0+x, y0-y, col)
+
+		y++
+		if err < 0 {
+			err += 2*y + 1
+		} else {
+			x--
+			err += 2*(y-x) + 1
+		}
+	}
+}
+
+func drawHorizontalLine(img *ebiten.Image, x1, x2, y int, col color.Color) {
+	for x := x1; x <= x2; x++ {
+		setPixel(img, x, y, col)
+	}
+}
+
+// Function to set a pixel in the image, checking bounds
+func setPixel(img *ebiten.Image, x, y int, col color.Color) {
+	if x >= 0 && x < img.Bounds().Max.X && y >= 0 && y < img.Bounds().Max.Y {
+		img.Set(x, y, col)
 	}
 }
 
@@ -286,12 +354,13 @@ func (g *Game) handleErasing(x, y int) {
 	if x >= v.x+(v.w/2)-(sliderWidth/2)-sliderMouseOffset && x <= v.x+(v.w/2)-(sliderWidth/2)+sliderWidth+sliderMouseOffset && y >= v.y+v.h+sliderYOffset-sliderMouseOffset && y <= v.y+v.h+sliderYOffset+sliderHeight+sliderMouseOffset {
 		g.sliderDragging = true
 		g.updateSliderValue(x - (v.x + (v.w / 2) - (sliderWidth / 2)))
+		return
 	}
 
 	// Check if outofbounds + an offset for deselecting the eraser
-	outOfBoundsOffset := 30
+	outOfBoundsOffset := 80
 	if x < v.x-outOfBoundsOffset || x > v.x+v.w+outOfBoundsOffset || y < v.y-outOfBoundsOffset || y > v.y+v.h+sliderYOffset+sliderMouseOffset+outOfBoundsOffset {
-		g.erasing = false
+		g.erasingToggle = false
 		return
 	}
 
@@ -304,8 +373,20 @@ func (g *Game) handleErasing(x, y int) {
 		return
 	}
 
+	if g.prevMouseX == x && g.prevMouseY == y { // Prevent erasing when mouse is not moving
+		return
+	}
+
 	px, py := getPixelCoordinates(v, x, y)
-	g.erasePixels(v, px, py)
+	if g.prevMouseX == 0 && g.prevMouseY == 0 {
+		g.prevMouseX = px
+		g.prevMouseY = py
+	}
+
+	// draw transparent line
+	drawLine(v.image, g.prevMouseX, g.prevMouseY, px, py, g.sliderValue, color.RGBA{0, 0, 0, 0})
+	g.prevMouseX = px
+	g.prevMouseY = py
 }
 
 func containsIndex(arr []int, val int) bool {
@@ -325,7 +406,7 @@ func (g *Game) checkButtonClicks(x, y int) {
 
 	for i, button := range g.buttons {
 		yOffset := v.y + initialYOffset + (buttonSize * i)
-		if g.erasing && !containsIndex([]int{1, 2, 3}, i) {
+		if g.erasingToggle && !containsIndex([]int{1, 2, 3}, i) {
 			continue
 		}
 
@@ -343,12 +424,12 @@ func (g *Game) handleLeftMouseButton(x, y int) {
 			if !g.clicking {
 				g.checkButtonClicks(x, y)
 			}
-			if g.erasing {
+			if g.erasingToggle {
 				g.handleErasing(x, y)
 			}
 		}
 
-		if !g.resizing && !g.clicking && !g.erasing {
+		if !g.resizing && !g.clicking && !g.erasingToggle {
 			g.checkVisageDrag(x, y)
 		}
 	} else if g.dragging {
@@ -440,6 +521,8 @@ func (g *Game) handleMouseRelease() {
 	g.clicking = false
 	g.panning = false
 	g.sliderDragging = false
+	g.prevMouseX = 0
+	g.prevMouseY = 0
 }
 
 func (g *Game) handlePanning(x, y int) {
@@ -473,7 +556,7 @@ func (g *Game) drawVisages(screen *ebiten.Image) {
 		g.drawVisageBorder(screen, v)
 		g.drawResizeHandles(screen, v)
 		g.drawButtons(screen, v)
-		if g.erasing {
+		if g.erasingToggle {
 			g.drawEraser(screen, v)
 		}
 	}
@@ -507,7 +590,7 @@ func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
 
 		vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
 
-		if g.erasing && containsIndex([]int{1, 2, 3}, i) {
+		if g.erasingToggle && containsIndex([]int{1, 2, 3}, i) {
 			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
 		}
 
@@ -521,7 +604,10 @@ func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
 
 func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
 	x, y := ebiten.CursorPosition()
-	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue), colorEraser, false)
+	// Eraser cursor
+	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue)/2, colorEraser, false)
+
+	// Eraser slider
 	vector.DrawFilledRect(screen, float32(v.x+(v.w/2)-(sliderWidth/2)), float32(v.y+v.h+sliderYOffset), sliderWidth, sliderHeight, colorNavy, false)
 	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 12, colorNavy, false)
 	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 10, colorNeonRed, false)
@@ -560,7 +646,7 @@ func (g *Game) drawDebugInfo(screen *ebiten.Image) {
 			ebitenutil.DebugPrint(screen, "Action: Panning")
 		case g.clicking:
 			ebitenutil.DebugPrint(screen, "Action: Clicking")
-		case g.erasing:
+		case g.erasingToggle:
 			ebitenutil.DebugPrint(screen, "Action: Erasing")
 		default:
 			ebitenutil.DebugPrint(screen, "Action: None")
@@ -569,7 +655,7 @@ func (g *Game) drawDebugInfo(screen *ebiten.Image) {
 }
 
 func (g *Game) moveAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected || g.erasing {
+	if len(g.visages) == 0 || !g.selected || g.erasingToggle {
 		return
 	}
 
@@ -616,7 +702,7 @@ func (g *Game) rotateAction(selectedIndex int) {
 }
 
 func (g *Game) deleteAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected || g.erasing {
+	if len(g.visages) == 0 || !g.selected || g.erasingToggle {
 		return
 	}
 
@@ -631,7 +717,7 @@ func (g *Game) deleteAction(selectedIndex int) {
 }
 
 func (g *Game) copyAction(selectedIndex int) {
-	if len(g.visages) == 0 || !g.selected || g.erasing {
+	if len(g.visages) == 0 || !g.selected || g.erasingToggle {
 		return
 	}
 
@@ -650,8 +736,8 @@ func (g *Game) copyAction(selectedIndex int) {
 }
 
 func (g *Game) eraseAction(selectedIndex int) {
-	g.erasing = !g.erasing
-	log.Println("Erasing: ", g.erasing)
+	g.erasingToggle = !g.erasingToggle
+	log.Println("Erasing: ", g.erasingToggle)
 }
 
 func loadAssets(g *Game) {
@@ -685,11 +771,6 @@ func loadAssets(g *Game) {
 }
 
 func (g *Game) Update() error {
-	touchIDs := inpututil.AppendJustPressedTouchIDs(g.touchIds[:0])
-	if len(touchIDs) > 0 {
-		log.Printf("TouchIDs: %v", touchIDs)
-	}
-
 	g.handleErrors()
 	g.handleDroppedFiles()
 	g.handleKeybinds()
