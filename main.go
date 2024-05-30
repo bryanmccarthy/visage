@@ -71,6 +71,7 @@ const (
 	sliderWidth       = 150
 	sliderHeight      = 8
 	sliderYOffset     = 18
+	erasingOOBOffset  = 80
 )
 
 var (
@@ -160,7 +161,13 @@ func (g *Game) handleCursor(x, y int) {
 		initialYOffset := (v.h - totalButtonsHeight) / 2
 
 		if g.erasingToggle {
-			cursor = ebiten.CursorShapeCrosshair
+			// if out of bounds
+			if x < v.x-erasingOOBOffset || x > v.x+v.w+erasingOOBOffset || y < v.y-erasingOOBOffset || y > v.y+v.h+erasingOOBOffset {
+				cursor = ebiten.CursorShapePointer
+			} else {
+				cursor = ebiten.CursorShapeCrosshair
+			}
+
 		}
 
 		for i, button := range g.buttons { // Button Hover Cursor
@@ -358,8 +365,7 @@ func (g *Game) handleErasing(x, y int) {
 	}
 
 	// Check if outofbounds + an offset for deselecting the eraser
-	outOfBoundsOffset := 80
-	if x < v.x-outOfBoundsOffset || x > v.x+v.w+outOfBoundsOffset || y < v.y-outOfBoundsOffset || y > v.y+v.h+sliderYOffset+sliderMouseOffset+outOfBoundsOffset {
+	if x < v.x-erasingOOBOffset || x > v.x+v.w+erasingOOBOffset || y < v.y-erasingOOBOffset || y > v.y+v.h+erasingOOBOffset {
 		g.erasingToggle = false
 		return
 	}
@@ -604,6 +610,11 @@ func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
 
 func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
 	x, y := ebiten.CursorPosition()
+	// if out of bounds don't draw
+	if x < v.x-erasingOOBOffset || x > v.x+v.w+erasingOOBOffset || y < v.y-erasingOOBOffset || y > v.y+v.h+erasingOOBOffset {
+		return
+	}
+
 	// Eraser cursor
 	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue)/2, colorEraser, false)
 
