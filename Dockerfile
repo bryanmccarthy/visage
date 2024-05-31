@@ -11,7 +11,7 @@ COPY . .
 RUN GOOS=js GOARCH=wasm go build -o main.wasm main.go
 RUN GOOS=linux GOARCH=amd64 go build -o server/main server/main.go
 
-FROM debian:bullseye-slim
+FROM debian:buster-slim
 
 COPY --from=builder /app/server/main ./server/main
 COPY --from=builder /app/main.wasm ./main.wasm
