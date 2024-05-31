@@ -1,6 +1,6 @@
 FROM golang:1.20 AS builder
 
-RUN apt-get update && apt-get install -y libx11-dev
+RUN apt-get update && apt-get install -y libx11-dev && apt install libc6
 
 WORKDIR /app
 
