@@ -1,5 +1,4 @@
 go.sum
 main
 main.wasm
-wasm_exec.js
 .DS_Store
