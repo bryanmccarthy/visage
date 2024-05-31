@@ -26,6 +26,7 @@ type Visage struct {
 type Button struct {
 	w, h    int
 	xOffset int
+	yOffset int
 	image   *ebiten.Image
 	action  func(selectedIndex int)
 }
@@ -65,7 +66,7 @@ const (
 	handleTopRight    = 2
 	handleBottomLeft  = 3
 	handleBottomRight = 4
-	buttonSize        = 30
+	buttonSize        = 32
 	sliderMin         = 5
 	sliderMax         = 145
 	sliderWidth       = 150
@@ -75,10 +76,6 @@ const (
 )
 
 var (
-	colorNeonRed = color.RGBA{255, 32, 78, 255}
-	// colorDarkRed = color.RGBA{160, 21, 62, 255}
-	// colorMaroon  = color.RGBA{93, 14, 65, 255}
-	colorNavy   = color.RGBA{0, 34, 77, 255}
 	colorEraser = color.RGBA{255, 32, 78, 200}
 )
 
@@ -157,9 +154,6 @@ func (g *Game) handleCursor(x, y int) {
 	if g.selected {
 		v := g.visages[g.selectedIndex]
 
-		totalButtonsHeight := buttonSize * len(g.buttons)
-		initialYOffset := (v.h - totalButtonsHeight) / 2
-
 		if g.erasingToggle {
 			// if out of bounds
 			if x < v.x-erasingOOBOffset || x > v.x+v.w+erasingOOBOffset || y < v.y-erasingOOBOffset || y > v.y+v.h+erasingOOBOffset {
@@ -171,7 +165,7 @@ func (g *Game) handleCursor(x, y int) {
 		}
 
 		for i, button := range g.buttons { // Button Hover Cursor
-			yOffset := v.y + initialYOffset + (buttonSize * i)
+			yOffset := v.y + (buttonSize * i)
 			if x >= v.x+button.xOffset && x <= v.x+button.xOffset+buttonSize && y >= yOffset && y <= yOffset+buttonSize {
 				if g.erasingToggle && !containsIndex([]int{1, 2, 3}, i) {
 					cursor = ebiten.CursorShapeNotAllowed
@@ -407,11 +401,8 @@ func containsIndex(arr []int, val int) bool {
 func (g *Game) checkButtonClicks(x, y int) {
 	v := g.visages[g.selectedIndex]
 
-	totalButtonsHeight := buttonSize * len(g.buttons)
-	initialYOffset := (v.h - totalButtonsHeight) / 2
-
 	for i, button := range g.buttons {
-		yOffset := v.y + initialYOffset + (buttonSize * i)
+		yOffset := v.y + (buttonSize * i)
 		if g.erasingToggle && !containsIndex([]int{1, 2, 3}, i) {
 			continue
 		}
@@ -569,41 +560,44 @@ func (g *Game) drawVisages(screen *ebiten.Image) {
 }
 
 func (g *Game) drawVisageBorder(screen *ebiten.Image, v Visage) {
+	var colorWhite = color.RGBA{0, 0, 0, 255}
 	var borderThickness float32 = 2
-	vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), borderThickness, colorNavy, false)
-	vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w)+borderThickness, borderThickness, colorNavy, false)
-	vector.DrawFilledRect(screen, float32(v.x), float32(v.y), borderThickness, float32(v.h), colorNavy, false)
-	vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), borderThickness, float32(v.h)+borderThickness, colorNavy, false)
+	vector.DrawFilledRect(screen, float32(v.x), float32(v.y), float32(v.w), borderThickness, colorWhite, false)
+	vector.DrawFilledRect(screen, float32(v.x), float32(v.y+v.h), float32(v.w)+borderThickness, borderThickness, colorWhite, false)
+	vector.DrawFilledRect(screen, float32(v.x), float32(v.y), borderThickness, float32(v.h), colorWhite, false)
+	vector.DrawFilledRect(screen, float32(v.x+v.w), float32(v.y), borderThickness, float32(v.h)+borderThickness, colorWhite, false)
 }
 
 func (g *Game) drawResizeHandles(screen *ebiten.Image, v Visage) {
-	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
-	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize)+1, colorNavy, false)
-	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
-	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize)+1, colorNavy, false)
-	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
-	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize), colorNeonRed, false)
-	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
-	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize), colorNeonRed, false)
+	colorWhite := color.RGBA{255, 255, 255, 255}
+	colorBlack := color.RGBA{0, 0, 0, 255}
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize)+1, colorWhite, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize)+1, colorWhite, false)
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize)+1, colorWhite, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize)+1, colorWhite, false)
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y), float32(handleDisplaySize), colorBlack, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y), float32(handleDisplaySize), colorBlack, false)
+	vector.DrawFilledCircle(screen, float32(v.x), float32(v.y+v.h), float32(handleDisplaySize), colorBlack, false)
+	vector.DrawFilledCircle(screen, float32(v.x+v.w), float32(v.y+v.h), float32(handleDisplaySize), colorBlack, false)
 }
 
 func (g *Game) drawButtons(screen *ebiten.Image, v Visage) {
-	totalButtonsHeight := buttonSize * len(g.buttons)
-	initialYOffset := (v.h - totalButtonsHeight) / 2
-
 	for i, button := range g.buttons {
-		yOffset := v.y + initialYOffset + (buttonSize * i)
+		xOffset := v.x + button.xOffset
+		yOffset := v.y + button.yOffset + (buttonSize * i)
+		padding := 2
+		colorBlack := color.RGBA{0, 0, 0, 255}
 
-		vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorNavy, false)
+		vector.DrawFilledRect(screen, float32(xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorBlack, false)
 
 		if g.erasingToggle && containsIndex([]int{1, 2, 3}, i) {
-			vector.DrawFilledRect(screen, float32(v.x+button.xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorNeonRed, true)
+			vector.DrawFilledRect(screen, float32(xOffset), float32(yOffset), float32(buttonSize), float32(buttonSize), colorEraser, true)
 		}
 
 		op := &ebiten.DrawImageOptions{}
 		op.Filter = ebiten.FilterLinear
 		op.GeoM.Scale(float64(button.w)/float64(button.image.Bounds().Dx()), float64(button.h)/float64(button.image.Bounds().Dy()))
-		op.GeoM.Translate(float64(v.x+button.xOffset+2), float64(yOffset+2))
+		op.GeoM.Translate(float64(xOffset+padding), float64(yOffset+padding))
 		screen.DrawImage(button.image, op)
 	}
 }
@@ -618,10 +612,12 @@ func (g *Game) drawEraser(screen *ebiten.Image, v Visage) {
 	// Eraser cursor
 	vector.DrawFilledCircle(screen, float32(x), float32(y), float32(g.sliderValue)/2, colorEraser, false)
 
+	colorWhite := color.RGBA{255, 255, 255, 255}
+	colorBlack := color.RGBA{0, 0, 0, 255}
 	// Eraser slider
-	vector.DrawFilledRect(screen, float32(v.x+(v.w/2)-(sliderWidth/2)), float32(v.y+v.h+sliderYOffset), sliderWidth, sliderHeight, colorNavy, false)
-	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 12, colorNavy, false)
-	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 10, colorNeonRed, false)
+	vector.DrawFilledRect(screen, float32(v.x+(v.w/2)-(sliderWidth/2)), float32(v.y+v.h+sliderYOffset), sliderWidth, sliderHeight, colorBlack, false)
+	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 12, colorBlack, false)
+	vector.DrawFilledCircle(screen, float32(v.x+(v.w/2)-(sliderWidth/2)+g.sliderValue), float32(v.y+v.h+sliderYOffset+4), 10, colorWhite, false)
 }
 
 func (g *Game) drawDebugInfo(screen *ebiten.Image) {
@@ -771,9 +767,10 @@ func loadAssets(g *Game) {
 		}
 
 		button := Button{
-			w:       26,
-			h:       26,
-			xOffset: -36,
+			w:       28,
+			h:       28,
+			xOffset: -38,
+			yOffset: 10,
 			image:   img,
 			action:  icon.action,
 		}
@@ -794,7 +791,8 @@ func (g *Game) Update() error {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	screen.Fill(color.RGBA{240, 235, 230, 255})
+	screen.Fill(color.RGBA{240, 235, 230, 255}) // Background color
+	screen.Fill(color.RGBA{120, 120, 120, 200})
 
 	g.m.Lock()
 	defer g.m.Unlock()
