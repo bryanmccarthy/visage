@@ -13,4 +13,4 @@ wasmserve:
 	go run github.com/hajimehoshi/wasmserve@latest ./main.go
 
 clean:
-	rm -f main main.wasm
+	rm -f server/main main main.wasm
