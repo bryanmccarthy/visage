@@ -1,7 +1,5 @@
 FROM golang:1.20 AS builder
 
-RUN apt-get update && apt-get install -y libx11-dev && apt install libc6
-
 WORKDIR /app
 
 COPY go.mod go.sum ./
@@ -11,7 +9,7 @@ COPY . .
 RUN GOOS=js GOARCH=wasm go build -o main.wasm main.go
 RUN GOOS=linux GOARCH=amd64 go build -o server/main server/main.go
 
-FROM debian:buster-slim
+FROM debian:bullseye-slim
 
 COPY --from=builder /app/server/main ./server/main
 COPY --from=builder /app/main.wasm ./main.wasm
